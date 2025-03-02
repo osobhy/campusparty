@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "CampusParty2",
-    "slug": "CampusParty2",
+    "name": "CampusParty",
+    "slug": "campusparty",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -23,6 +23,30 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "useFrameworks": "static"
+          }
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "22e39387-d481-4d5e-a456-8c0ee1cd4700"
+      },
+      "FIREBASE_API_KEY": null,
+      "FIREBASE_AUTH_DOMAIN": null,
+      "FIREBASE_PROJECT_ID": null,
+      "FIREBASE_STORAGE_BUCKET": null,
+      "FIREBASE_MESSAGING_SENDER_ID": null,
+      "FIREBASE_APP_ID": null,
+      "FIREBASE_MEASUREMENT_ID": null
+    },
+    "owner": "omarsobhyy",
+    "description": "A mobile application for hosting and joining campus parties."
   }
 }
