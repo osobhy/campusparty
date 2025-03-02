@@ -19,12 +19,24 @@ import { Alert, Linking } from 'react-native';
 // Create a new party
 export const createParty = async (partyData, userId, university) => {
   try {
+    // Add payment fields if they exist
+    const paymentInfo = partyData.requiresPayment ? {
+      requiresPayment: true,
+      paymentAmount: parseFloat(partyData.paymentAmount) || 0,
+      venmoUsername: partyData.venmoUsername || '',
+      paymentDescription: partyData.paymentDescription || 'Party entrance fee'
+    } : {
+      requiresPayment: false
+    };
+
     const partyRef = await addDoc(collection(db, 'parties'), {
       ...partyData,
+      ...paymentInfo,
       host: userId,
       university: university,
       createdAt: serverTimestamp(),
       attendees: [userId], // Host is automatically an attendee
+      paidAttendees: [userId], // Host is automatically marked as paid
       updatedAt: serverTimestamp()
     });
 
@@ -196,19 +208,43 @@ export const joinParty = async (partyId, userId) => {
       throw new Error('Party is full');
     }
     
-    // Add user to party attendees
-    await updateDoc(partyRef, {
-      attendees: arrayUnion(userId),
-      updatedAt: serverTimestamp()
-    });
-    
-    // Add party to user's joined parties
-    const userRef = doc(db, 'users', userId);
-    await updateDoc(userRef, {
-      joinedParties: arrayUnion(partyId)
-    });
-    
-    return true;
+    // Check if payment is required but not handling payment here
+    // We'll just mark the user as interested
+    if (partyData.requiresPayment) {
+      // Add user to party attendees but not to paidAttendees
+      await updateDoc(partyRef, {
+        attendees: arrayUnion(userId),
+        updatedAt: serverTimestamp()
+      });
+      
+      // Add party to user's joined parties
+      const userRef = doc(db, 'users', userId);
+      await updateDoc(userRef, {
+        joinedParties: arrayUnion(partyId)
+      });
+      
+      return {
+        success: true,
+        requiresPayment: true,
+        paymentAmount: partyData.paymentAmount,
+        venmoUsername: partyData.venmoUsername,
+        paymentDescription: partyData.paymentDescription
+      };
+    } else {
+      // Add user to party attendees
+      await updateDoc(partyRef, {
+        attendees: arrayUnion(userId),
+        updatedAt: serverTimestamp()
+      });
+      
+      // Add party to user's joined parties
+      const userRef = doc(db, 'users', userId);
+      await updateDoc(userRef, {
+        joinedParties: arrayUnion(partyId)
+      });
+      
+      return { success: true, requiresPayment: false };
+    }
   } catch (error) {
     console.error('Error joining party:', error);
     throw error;
@@ -455,5 +491,71 @@ export const getUserJoinedParties = async (userId) => {
   } catch (error) {
     console.error('Error fetching joined parties:', error);
     return [];
+  }
+};
+
+// Mark user as paid for a party
+export const markUserAsPaid = async (partyId, userId, paymentReference) => {
+  try {
+    const partyRef = doc(db, 'parties', partyId);
+    const partyDoc = await getDoc(partyRef);
+    
+    if (!partyDoc.exists()) {
+      throw new Error('Party not found');
+    }
+    
+    // Add payment record
+    const paymentRef = await addDoc(collection(db, 'payments'), {
+      partyId,
+      userId,
+      amount: partyDoc.data().paymentAmount,
+      reference: paymentReference,
+      timestamp: serverTimestamp(),
+      status: 'completed'
+    });
+    
+    // Add user to paid attendees
+    await updateDoc(partyRef, {
+      paidAttendees: arrayUnion(userId),
+      updatedAt: serverTimestamp()
+    });
+    
+    return { success: true, paymentId: paymentRef.id };
+  } catch (error) {
+    console.error('Error marking user as paid:', error);
+    throw error;
+  }
+};
+
+// Check if user has paid for a party
+export const checkUserPaymentStatus = async (partyId, userId) => {
+  try {
+    const partyRef = doc(db, 'parties', partyId);
+    const partyDoc = await getDoc(partyRef);
+    
+    if (!partyDoc.exists()) {
+      throw new Error('Party not found');
+    }
+    
+    const partyData = partyDoc.data();
+    
+    // If party doesn't require payment, user is considered paid
+    if (!partyData.requiresPayment) {
+      return { isPaid: true };
+    }
+    
+    // Check if user is in paidAttendees array
+    const isPaid = partyData.paidAttendees && partyData.paidAttendees.includes(userId);
+    
+    return { 
+      isPaid,
+      requiresPayment: partyData.requiresPayment,
+      paymentAmount: partyData.paymentAmount,
+      venmoUsername: partyData.venmoUsername,
+      paymentDescription: partyData.paymentDescription
+    };
+  } catch (error) {
+    console.error('Error checking payment status:', error);
+    throw error;
   }
 }; 

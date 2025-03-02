@@ -1,14 +1,21 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Modal } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import PartyQRCode from './PartyQRCode';
+import VenmoPayment from './VenmoPayment';
+import { useAuth } from '../context/AuthContext';
+import { checkUserPaymentStatus } from '../services/partyService';
 
 export default function PartyCard({ party, onJoin, isLoggedIn, isJoined, isHost, theme: propTheme }) {
   // Use provided theme from props or get from context
   const themeContext = useTheme();
   const theme = propTheme || themeContext.theme;
   const [showQRCode, setShowQRCode] = useState(false);
+  const [showPayment, setShowPayment] = useState(false);
+  const [paymentStatus, setPaymentStatus] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const { currentUser } = useAuth();
   
   // Format date and time
   const formatDateTime = (dateTimeString) => {
@@ -25,6 +32,47 @@ export default function PartyCard({ party, onJoin, isLoggedIn, isJoined, isHost,
       console.error('Error formatting date:', error);
       return 'Date not available';
     }
+  };
+
+  // Check payment status when component mounts
+  useEffect(() => {
+    if (isLoggedIn && currentUser && party.requiresPayment) {
+      checkPaymentStatus();
+    }
+  }, [isLoggedIn, currentUser, party.id]);
+
+  // Check if user has paid for the party
+  const checkPaymentStatus = async () => {
+    try {
+      setLoading(true);
+      const status = await checkUserPaymentStatus(party.id, currentUser.uid);
+      setPaymentStatus(status);
+    } catch (error) {
+      console.error('Error checking payment status:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle join button press
+  const handleJoinPress = () => {
+    if (isJoined) {
+      // If already joined, leave the party
+      onJoin();
+    } else if (party.requiresPayment && !paymentStatus?.isPaid) {
+      // If payment required and not paid, show payment screen
+      setShowPayment(true);
+    } else {
+      // Otherwise join normally
+      onJoin();
+    }
+  };
+
+  // Handle payment completion
+  const handlePaymentComplete = () => {
+    setShowPayment(false);
+    checkPaymentStatus();
+    onJoin();
   };
 
   if (!party) {
@@ -74,6 +122,31 @@ export default function PartyCard({ party, onJoin, isLoggedIn, isJoined, isHost,
         <Text style={[styles.detailText, { color: theme.subtext }]}>
           🎟️ Current Attendees: {party.attendees ? party.attendees.length : 0}
         </Text>
+        
+        {/* Payment information */}
+        {party.requiresPayment && (
+          <View style={styles.paymentInfo}>
+            <Text style={[styles.detailText, { color: theme.subtext }]}>
+              💰 Entry Fee: ${party.paymentAmount}
+            </Text>
+            <Text style={[styles.detailText, { color: theme.subtext }]}>
+              💳 Payment: Venmo @{party.venmoUsername}
+            </Text>
+            {isJoined && paymentStatus && (
+              <View style={[
+                styles.paymentStatus, 
+                { backgroundColor: paymentStatus.isPaid ? theme.success + '20' : theme.error + '20' }
+              ]}>
+                <Text style={[
+                  styles.paymentStatusText, 
+                  { color: paymentStatus.isPaid ? theme.success : theme.error }
+                ]}>
+                  {paymentStatus.isPaid ? 'Payment Verified ✓' : 'Payment Required'}
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
       </View>
 
       {party.university && (
@@ -94,7 +167,7 @@ export default function PartyCard({ party, onJoin, isLoggedIn, isJoined, isHost,
             styles.joinButton,
             { backgroundColor: isJoined ? theme.error : theme.success },
           ]}
-          onPress={onJoin}
+          onPress={handleJoinPress}
         >
           <Text style={styles.joinButtonText}>
             {isJoined ? 'Leave Party' : 'Join Party'}
@@ -102,11 +175,33 @@ export default function PartyCard({ party, onJoin, isLoggedIn, isJoined, isHost,
         </TouchableOpacity>
       )}
       
+      {/* QR Code Modal */}
       <PartyQRCode 
         visible={showQRCode} 
         onClose={() => setShowQRCode(false)} 
         party={party} 
       />
+      
+      {/* Payment Modal */}
+      <Modal
+        visible={showPayment}
+        transparent
+        animationType="slide"
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.card }]}>
+            <VenmoPayment
+              partyId={party.id}
+              userId={currentUser?.uid}
+              paymentAmount={party.paymentAmount}
+              venmoUsername={party.venmoUsername}
+              paymentDescription={party.paymentDescription || `Payment for ${party.title}`}
+              onPaymentComplete={handlePaymentComplete}
+              onCancel={() => setShowPayment(false)}
+            />
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -152,6 +247,22 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginBottom: 5,
   },
+  paymentInfo: {
+    marginTop: 5,
+    paddingTop: 5,
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
+  },
+  paymentStatus: {
+    marginTop: 5,
+    padding: 5,
+    borderRadius: 5,
+    alignSelf: 'flex-start',
+  },
+  paymentStatusText: {
+    fontWeight: 'bold',
+    fontSize: 12,
+  },
   universityTag: {
     alignSelf: 'flex-start',
     paddingHorizontal: 10,
@@ -182,5 +293,17 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    width: '100%',
+    borderRadius: 15,
+    overflow: 'hidden',
   },
 });

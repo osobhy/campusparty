@@ -11,6 +11,7 @@ A mobile application for hosting and joining campus parties.
 - **Dark Mode**: Toggle between light and dark themes
 - **QR Code Sharing**: Share party details via QR codes
 - **Notifications**: Receive notifications about party updates
+- **Payment Integration**: Require Venmo payments for party entry
 
 ## Tech Stack
 
@@ -57,6 +58,7 @@ npm start
 4. Set up the following Firestore collections:
    - `users`: Store user information
    - `parties`: Store party details
+   - `payments`: Store payment records
 5. Deploy Firestore security rules and indexes:
 
    ```bash
@@ -80,6 +82,25 @@ npm start
    ```bash
    node deploy-firebase-config.js
    ```
+
+## Payment Feature
+
+The app includes a Venmo payment integration for party hosts to charge entry fees:
+
+1. **For Party Hosts**:
+   - When creating a party, toggle "Require payment to attend"
+   - Enter the payment amount, your Venmo username, and an optional payment description
+   - The app will automatically track who has paid
+
+2. **For Party Attendees**:
+   - When joining a party that requires payment, you'll be prompted to pay via Venmo
+   - After making the payment, enter the transaction reference
+   - The host will verify your payment
+
+3. **Payment Verification**:
+   - Payments are tracked in the Firestore database
+   - Party hosts can see who has paid
+   - Attendees can see their payment status
 
 ## Troubleshooting
 

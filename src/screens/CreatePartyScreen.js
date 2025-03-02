@@ -27,6 +27,10 @@ export default function CreatePartyScreen({ navigation }) {
     location: '',
     date_time: new Date(),
     max_attendees: '',
+    requiresPayment: false,
+    paymentAmount: '',
+    venmoUsername: '',
+    paymentDescription: '',
   });
 
   const formatDate = (date) => {
@@ -69,6 +73,19 @@ export default function CreatePartyScreen({ navigation }) {
       return;
     }
 
+    // Validate payment fields if payment is required
+    if (formData.requiresPayment) {
+      if (!formData.paymentAmount || isNaN(parseFloat(formData.paymentAmount))) {
+        Alert.alert('Error', 'Please enter a valid payment amount');
+        return;
+      }
+      
+      if (!formData.venmoUsername) {
+        Alert.alert('Error', 'Please enter your Venmo username');
+        return;
+      }
+    }
+
     // Check if user has university information
     if (!currentUser.university) {
       Alert.alert('Error', 'Your university information is missing. Please update your profile.');
@@ -85,6 +102,10 @@ export default function CreatePartyScreen({ navigation }) {
         location: formData.location,
         date_time: formData.date_time.toISOString(),
         max_attendees: formData.max_attendees ? parseInt(formData.max_attendees) : null,
+        requiresPayment: formData.requiresPayment,
+        paymentAmount: formData.requiresPayment ? formData.paymentAmount : null,
+        venmoUsername: formData.requiresPayment ? formData.venmoUsername : null,
+        paymentDescription: formData.requiresPayment ? formData.paymentDescription : null,
       };
       
       // Create party in Firestore with university information
@@ -101,6 +122,14 @@ export default function CreatePartyScreen({ navigation }) {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Toggle payment requirement
+  const togglePaymentRequired = () => {
+    setFormData({
+      ...formData,
+      requiresPayment: !formData.requiresPayment
+    });
   };
 
   return (
@@ -188,6 +217,62 @@ export default function CreatePartyScreen({ navigation }) {
             onChangeText={(text) => setFormData({...formData, max_attendees: text})}
           />
 
+          {/* Payment Options */}
+          <View style={styles.paymentSection}>
+            <Text style={styles.sectionTitle}>Payment Options</Text>
+            
+            <TouchableOpacity 
+              style={styles.toggleContainer}
+              onPress={togglePaymentRequired}
+            >
+              <View style={[
+                styles.toggleButton, 
+                formData.requiresPayment ? styles.toggleActive : {}
+              ]}>
+                <View style={[
+                  styles.toggleCircle, 
+                  formData.requiresPayment ? styles.toggleCircleActive : {}
+                ]} />
+              </View>
+              <Text style={styles.toggleText}>
+                Require payment to attend
+              </Text>
+            </TouchableOpacity>
+
+            {formData.requiresPayment && (
+              <View style={styles.paymentFields}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Payment Amount ($) *"
+                  keyboardType="decimal-pad"
+                  value={formData.paymentAmount}
+                  onChangeText={(text) => setFormData({...formData, paymentAmount: text})}
+                />
+                
+                <TextInput
+                  style={styles.input}
+                  placeholder="Your Venmo Username *"
+                  value={formData.venmoUsername}
+                  onChangeText={(text) => setFormData({...formData, venmoUsername: text})}
+                />
+                
+                <TextInput
+                  style={styles.input}
+                  placeholder="Payment Description (optional)"
+                  value={formData.paymentDescription}
+                  onChangeText={(text) => setFormData({...formData, paymentDescription: text})}
+                />
+                
+                <View style={styles.infoBox}>
+                  <Text style={styles.infoText}>
+                    Attendees will be prompted to pay via Venmo before they can RSVP.
+                    You'll need to manually verify payments.
+                  </Text>
+                </View>
+              </View>
+            )}
+          </View>
+
           <TouchableOpacity 
             style={styles.button} 
             onPress={handleSubmit}
@@ -274,5 +359,58 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  paymentSection: {
+    marginTop: 10,
+    marginBottom: 20,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 15,
+  },
+  toggleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  toggleButton: {
+    width: 50,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#e5e7eb',
+    justifyContent: 'center',
+    padding: 5,
+  },
+  toggleActive: {
+    backgroundColor: '#6366f1',
+  },
+  toggleCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: 'white',
+  },
+  toggleCircleActive: {
+    transform: [{ translateX: 20 }],
+  },
+  toggleText: {
+    marginLeft: 10,
+    fontSize: 16,
+  },
+  paymentFields: {
+    marginTop: 10,
+  },
+  infoBox: {
+    backgroundColor: '#f0f9ff',
+    padding: 15,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#bae6fd',
+    marginBottom: 15,
+  },
+  infoText: {
+    color: '#0369a1',
+    fontSize: 14,
   },
 });

@@ -9,7 +9,9 @@ service cloud.firestore {
       allow update: if request.auth != null && 
                      (request.auth.uid == resource.data.host || 
                       request.resource.data.attendees.hasOnly(resource.data.attendees) ||
-                      resource.data.attendees.hasOnly(request.resource.data.attendees));
+                      resource.data.attendees.hasOnly(request.resource.data.attendees) ||
+                      request.resource.data.paidAttendees.hasOnly(resource.data.paidAttendees) ||
+                      resource.data.paidAttendees.hasOnly(request.resource.data.paidAttendees));
       allow delete: if request.auth != null && request.auth.uid == resource.data.host;
     }
     
@@ -19,6 +21,23 @@ service cloud.firestore {
       allow create: if request.auth != null && request.auth.uid == userId;
       allow update: if request.auth != null && request.auth.uid == userId;
       allow delete: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Payments
+    match /payments/{paymentId} {
+      allow read: if request.auth != null && 
+                   (request.auth.uid == resource.data.userId || 
+                    getParty(resource.data.partyId).data.host == request.auth.uid);
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
+      allow update: if request.auth != null && 
+                     (request.auth.uid == resource.data.userId || 
+                      getParty(resource.data.partyId).data.host == request.auth.uid);
+      allow delete: if false; // Don't allow deletion of payment records
+    }
+    
+    // Helper function to get a party document
+    function getParty(partyId) {
+      return get(/databases/$(database)/documents/parties/$(partyId));
     }
   }
 } 
