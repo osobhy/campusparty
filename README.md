@@ -57,7 +57,50 @@ npm start
 4. Set up the following Firestore collections:
    - `users`: Store user information
    - `parties`: Store party details
-5. Set up Firestore rules for proper security
+5. Deploy Firestore security rules and indexes:
+
+   ```bash
+   # Install Firebase CLI
+   npm install -g firebase-tools
+   
+   # Login to Firebase
+   firebase login
+   
+   # Initialize Firebase in your project
+   firebase init
+   
+   # Deploy Firestore rules
+   firebase deploy --only firestore:rules
+   
+   # Deploy Firestore indexes
+   firebase deploy --only firestore:indexes
+   ```
+
+   Alternatively, you can run the helper script:
+   ```bash
+   node deploy-firebase-config.js
+   ```
+
+## Troubleshooting
+
+### Firestore Index Errors
+
+If you see errors like "The query requires an index", you need to create the necessary Firestore indexes:
+
+1. Use the provided `firestore.indexes.json` file to deploy all required indexes:
+   ```bash
+   firebase deploy --only firestore:indexes
+   ```
+
+2. Alternatively, click on the URL in the error message to create the specific index needed.
+
+### Permission Errors
+
+If you see "Missing or insufficient permissions" errors:
+
+1. Make sure you're logged in to the app
+2. Verify that your Firestore security rules are properly deployed
+3. Check that you're using the correct Firebase project
 
 ## Contributing
 

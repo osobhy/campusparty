@@ -2,17 +2,23 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Allow read/write access to authenticated users
-    match /users/{userId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null && request.auth.uid == userId;
+    // Allow anyone to read parties
+    match /parties/{partyId} {
+      allow read: if true;
+      allow create: if request.auth != null;
+      allow update: if request.auth != null && 
+                     (request.auth.uid == resource.data.host || 
+                      request.resource.data.attendees.hasOnly(resource.data.attendees) ||
+                      resource.data.attendees.hasOnly(request.resource.data.attendees));
+      allow delete: if request.auth != null && request.auth.uid == resource.data.host;
     }
     
-    match /parties/{partyId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null;
-      allow update, delete: if request.auth != null && 
-                            (resource.data.host == request.auth.uid);
+    // User profiles
+    match /users/{userId} {
+      allow read: if true;
+      allow create: if request.auth != null && request.auth.uid == userId;
+      allow update: if request.auth != null && request.auth.uid == userId;
+      allow delete: if request.auth != null && request.auth.uid == userId;
     }
   }
 } 

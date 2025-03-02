@@ -260,7 +260,7 @@ const handleMissingIndexError = (error) => {
       const indexUrl = urlMatch[1];
       Alert.alert(
         'Index Required',
-        'This query requires a Firestore index. Would you like to create it now?',
+        'This query requires a Firestore index. Would you like to create it now?\n\nAlternatively, you can use the firestore.indexes.json file in your project to deploy all required indexes.',
         [
           { text: 'Cancel', style: 'cancel' },
           { 
@@ -269,10 +269,25 @@ const handleMissingIndexError = (error) => {
           }
         ]
       );
+    } else {
+      Alert.alert(
+        'Index Required',
+        'This query requires a Firestore index. Please check the console for more information.'
+      );
     }
     return [];
+  } else if (error.code === 'permission-denied') {
+    Alert.alert(
+      'Permission Denied',
+      'You do not have permission to access this data. Please make sure you are logged in and have the necessary permissions.',
+      [
+        { text: 'OK' }
+      ]
+    );
+    return [];
+  } else {
+    throw error;
   }
-  throw error;
 };
 
 // Get parties hosted by a user
