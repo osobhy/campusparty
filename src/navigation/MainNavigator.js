@@ -11,6 +11,7 @@ import LoginScreen from '../screens/LoginScreen';
 import RegisterScreen from '../screens/RegisterScreen';
 import CreatePartyScreen from '../screens/CreatePartyScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+import PartyDetailsScreen from '../screens/PartyDetailsScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -67,6 +68,11 @@ const HomeStack = () => {
         component={CreatePartyScreen} 
         options={{ title: 'Create Party' }}
       />
+      <Stack.Screen 
+        name="PartyDetails" 
+        component={PartyDetailsScreen} 
+        options={{ title: 'Party Details' }}
+      />
     </Stack.Navigator>
   );
 };
@@ -99,6 +105,11 @@ const ProfileStack = () => {
         name="Settings" 
         component={SettingsScreen} 
         options={{ title: 'Settings' }}
+      />
+      <Stack.Screen 
+        name="PartyDetails" 
+        component={PartyDetailsScreen} 
+        options={{ title: 'Party Details' }}
       />
     </Stack.Navigator>
   );

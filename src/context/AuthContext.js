@@ -4,11 +4,13 @@ import {
   signInWithEmailAndPassword, 
   signOut, 
   onAuthStateChanged,
-  updateProfile
+  updateProfile,
+  getAuth
 } from 'firebase/auth';
 import { doc, setDoc, getDoc, collection } from 'firebase/firestore';
-import { auth, db } from '../firebase/config';
+import { auth, db, app } from '../firebase/config';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Alert } from 'react-native';
 
 const AuthContext = createContext();
 
@@ -17,15 +19,37 @@ export const useAuth = () => useContext(AuthContext);
 export const AuthProvider = ({ children }) => {
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState(null);
+  const [userProfile, setUserProfile] = useState(null);
+
+  // Function to check if Firebase Auth is initialized
+  const getAuthInstance = () => {
+    if (!auth && app) {
+      console.log('Auth is null, getting new auth instance');
+      return getAuth(app);
+    }
+    return auth;
+  };
 
   // Register a new user
   const register = async (email, password, username, university) => {
+    setAuthError(null);
+    const authInstance = getAuthInstance();
+    
+    if (!authInstance) {
+      const errorMsg = 'Authentication service is not available';
+      console.error(errorMsg);
+      setAuthError(errorMsg);
+      throw new Error(errorMsg);
+    }
+    
     try {
       console.log('Starting user registration process');
+      console.log('Registration data:', { email, username, university });
       
       // Create user in Firebase Auth
       console.log('Creating user in Firebase Auth');
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const userCredential = await createUserWithEmailAndPassword(authInstance, email, password);
       console.log('User created in Firebase Auth:', userCredential.user.uid);
       
       // Update profile with username
@@ -33,130 +57,234 @@ export const AuthProvider = ({ children }) => {
       await updateProfile(userCredential.user, {
         displayName: username
       });
-      console.log('User profile updated');
+      console.log('User profile updated with username');
       
-      // Ensure the users collection exists
-      try {
+      // Create user document in Firestore
+      if (db) {
         console.log('Creating user document in Firestore');
-        // Create user document in Firestore
-        await setDoc(doc(db, 'users', userCredential.user.uid), {
-          uid: userCredential.user.uid,
-          email,
+        const userData = {
           username,
+          email,
           university,
           createdAt: new Date().toISOString(),
           parties: [],
-          joinedParties: []
-        });
+          friends: []
+        };
+        
+        console.log('User data to save:', userData);
+        
+        const userDocRef = doc(db, 'users', userCredential.user.uid);
+        await setDoc(userDocRef, userData);
+        
+        // Store the user profile in state
+        setUserProfile(userData);
+        
+        // Also store in AsyncStorage for persistence
+        await AsyncStorage.setItem('userProfile', JSON.stringify(userData));
+        
         console.log('User document created in Firestore');
-      } catch (firestoreError) {
-        console.error('Error creating user document in Firestore:', firestoreError);
-        // Continue even if Firestore document creation fails
-        // The user is still created in Firebase Auth
+      } else {
+        console.warn('Firestore not available, skipping user document creation');
       }
       
       return userCredential.user;
     } catch (error) {
-      console.error('Registration error in AuthContext:', error);
+      console.error('Registration error:', error);
+      const formattedError = formatErrorMessage(error);
+      setAuthError(formattedError);
       throw error;
     }
   };
 
   // Login user
   const login = async (email, password) => {
+    setAuthError(null);
+    const authInstance = getAuthInstance();
+    
+    if (!authInstance) {
+      const errorMsg = 'Authentication service is not available';
+      console.error(errorMsg);
+      setAuthError(errorMsg);
+      throw new Error(errorMsg);
+    }
+    
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const userCredential = await signInWithEmailAndPassword(authInstance, email, password);
+      
+      // Get user profile after login
+      const profile = await getUserProfile(userCredential.user.uid);
+      setUserProfile(profile);
+      
+      // Store in AsyncStorage
+      if (profile) {
+        await AsyncStorage.setItem('userProfile', JSON.stringify(profile));
+      }
+      
       return userCredential.user;
     } catch (error) {
       console.error('Login error:', error);
+      const formattedError = formatErrorMessage(error);
+      setAuthError(formattedError);
       throw error;
     }
   };
 
   // Logout user
-  const logout = () => {
-    return signOut(auth);
+  const logout = async () => {
+    setAuthError(null);
+    const authInstance = getAuthInstance();
+    
+    if (!authInstance) {
+      const errorMsg = 'Authentication service is not available';
+      console.error(errorMsg);
+      setAuthError(errorMsg);
+      throw new Error(errorMsg);
+    }
+    
+    try {
+      await signOut(authInstance);
+      setUserProfile(null);
+      await AsyncStorage.removeItem('userProfile');
+    } catch (error) {
+      console.error('Logout error:', error);
+      const formattedError = formatErrorMessage(error);
+      setAuthError(formattedError);
+      throw error;
+    }
   };
 
-  // Get user profile data
+  // Get user profile
   const getUserProfile = async (uid) => {
-    try {
-      const userDoc = await getDoc(doc(db, 'users', uid));
-      if (userDoc.exists()) {
-        return userDoc.data();
-      }
-      
-      // If user document doesn't exist, create it
-      console.log('User document not found, creating one');
-      const user = auth.currentUser;
-      if (user) {
-        const userData = {
-          uid: user.uid,
-          email: user.email,
-          username: user.displayName || 'User',
-          createdAt: new Date().toISOString(),
-          parties: [],
-          joinedParties: []
-        };
-        
-        await setDoc(doc(db, 'users', uid), userData);
-        return userData;
-      }
-      
+    if (!db) {
+      console.warn('Firestore not available, cannot get user profile');
       return null;
+    }
+    
+    try {
+      const userDocRef = doc(db, 'users', uid);
+      const userDoc = await getDoc(userDocRef);
+      
+      if (userDoc.exists()) {
+        const userData = { id: uid, ...userDoc.data() };
+        return userData;
+      } else {
+        console.warn(`User document not found for uid: ${uid}`);
+        
+        // Create user document if it doesn't exist and we have a current user
+        if (currentUser) {
+          try {
+            const newUserData = {
+              username: currentUser.displayName || 'User',
+              email: currentUser.email,
+              university: 'Unknown University',
+              createdAt: new Date().toISOString(),
+              parties: [],
+              friends: []
+            };
+            
+            await setDoc(userDocRef, newUserData);
+            console.log('Created missing user document');
+            return { id: uid, ...newUserData };
+          } catch (createError) {
+            console.error('Error creating missing user document:', createError);
+          }
+        }
+        
+        return null;
+      }
     } catch (error) {
       console.error('Error getting user profile:', error);
       return null;
     }
   };
 
+  // Format error messages for user display
+  const formatErrorMessage = (error) => {
+    let message = 'An error occurred. Please try again.';
+    
+    if (error.code) {
+      switch (error.code) {
+        case 'auth/email-already-in-use':
+          message = 'This email is already in use.';
+          break;
+        case 'auth/invalid-email':
+          message = 'Invalid email address.';
+          break;
+        case 'auth/weak-password':
+          message = 'Password is too weak. Use at least 6 characters.';
+          break;
+        case 'auth/user-not-found':
+        case 'auth/wrong-password':
+          message = 'Invalid email or password.';
+          break;
+        case 'auth/too-many-requests':
+          message = 'Too many failed login attempts. Please try again later.';
+          break;
+        case 'auth/network-request-failed':
+          message = 'Network error. Please check your internet connection.';
+          break;
+        case 'auth/api-key-not-valid':
+          message = 'Authentication configuration error. Please contact support.';
+          break;
+        default:
+          message = `Error: ${error.message}`;
+      }
+    }
+    
+    return message;
+  };
+
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+    const authInstance = getAuthInstance();
+    
+    if (!authInstance) {
+      console.warn('Auth is not initialized, skipping auth state listener');
+      setLoading(false);
+      return;
+    }
+    
+    console.log('Setting up auth state listener');
+    const unsubscribe = onAuthStateChanged(authInstance, async (user) => {
+      console.log('Auth state changed:', user ? `User ${user.uid}` : 'No user');
+      setCurrentUser(user);
+      
       if (user) {
+        // Try to get user profile from AsyncStorage first (faster)
         try {
-          // Get additional user data from Firestore
-          const userProfile = await getUserProfile(user.uid);
-          setCurrentUser({ ...user, ...userProfile });
-          
-          // Store user data in AsyncStorage
-          await AsyncStorage.setItem('user', JSON.stringify({ 
-            uid: user.uid, 
-            email: user.email,
-            displayName: user.displayName
-          }));
+          const storedProfile = await AsyncStorage.getItem('userProfile');
+          if (storedProfile) {
+            setUserProfile(JSON.parse(storedProfile));
+          }
         } catch (error) {
-          console.error('Error in auth state change handler:', error);
-          setCurrentUser(user);
+          console.error('Error getting stored profile:', error);
+        }
+        
+        // Then get fresh data from Firestore
+        try {
+          const profile = await getUserProfile(user.uid);
+          if (profile) {
+            setUserProfile(profile);
+            await AsyncStorage.setItem('userProfile', JSON.stringify(profile));
+          }
+        } catch (error) {
+          console.error('Error getting user profile on auth state change:', error);
         }
       } else {
-        setCurrentUser(null);
-        await AsyncStorage.removeItem('user');
+        setUserProfile(null);
+        await AsyncStorage.removeItem('userProfile');
       }
+      
       setLoading(false);
     });
-
-    // Check for stored user on app start
-    const checkStoredUser = async () => {
-      try {
-        const storedUser = await AsyncStorage.getItem('user');
-        if (storedUser && !currentUser) {
-          const userData = JSON.parse(storedUser);
-          // This will trigger the onAuthStateChanged listener
-          // if the session is still valid
-        }
-      } catch (error) {
-        console.error('Error checking stored user:', error);
-      }
-    };
-
-    checkStoredUser();
 
     return unsubscribe;
   }, []);
 
   const value = {
     currentUser,
+    userProfile,
     loading,
+    authError,
     register,
     login,
     logout,
@@ -165,7 +293,7 @@ export const AuthProvider = ({ children }) => {
 
   return (
     <AuthContext.Provider value={value}>
-      {!loading && children}
+      {children}
     </AuthContext.Provider>
   );
 }; 

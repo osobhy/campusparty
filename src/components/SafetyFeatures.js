@@ -12,12 +12,49 @@ import {
   getRideshareOptions,
   getCampusShuttles
 } from '../services/safetyService';
-import { useAuth } from '../contexts/AuthContext';
-import { useTheme } from '../contexts/ThemeContext';
+import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
+import { db } from '../firebase/config';
+
+// Default theme as fallback
+const defaultTheme = {
+  background: '#f8f9fa',
+  card: '#ffffff',
+  text: '#111827',
+  subtext: '#6b7280',
+  primary: '#6366f1',
+  secondary: '#a855f7',
+  accent: '#3b82f6',
+  border: '#e5e7eb',
+  error: '#ef4444',
+  success: '#10b981',
+  warning: '#f59e0b',
+  info: '#3b82f6',
+  notification: '#f59e0b',
+  colors: {
+    background: '#f8f9fa',
+    card: '#ffffff',
+    text: '#111827',
+    subtext: '#6b7280',
+    primary: '#6366f1',
+    secondary: '#a855f7',
+    accent: '#3b82f6',
+    border: '#e5e7eb',
+    error: '#ef4444',
+    success: '#10b981',
+    warning: '#f59e0b',
+    info: '#3b82f6',
+    notification: '#f59e0b'
+  }
+};
 
 const SafetyFeatures = ({ partyId, university }) => {
-  const { user } = useAuth();
-  const { colors, isDark } = useTheme();
+  const { currentUser, userProfile } = useAuth();
+  const themeContext = useTheme();
+  
+  // Ensure we always have a valid theme object with all required properties
+  const theme = themeContext?.theme || defaultTheme;
+  
   const [isDD, setIsDD] = useState(false);
   const [ddList, setDdList] = useState([]);
   const [drinkCount, setDrinkCount] = useState(0);
@@ -33,29 +70,54 @@ const SafetyFeatures = ({ partyId, university }) => {
     carInfo: '',
     maxPassengers: 4
   });
-  const [userProfile, setUserProfile] = useState({
+  const [userPhysicalProfile, setUserPhysicalProfile] = useState({
     gender: 'male',
     weight: 70, // kg
     startTime: new Date()
   });
   const [rideshareOptions, setRideshareOptions] = useState([]);
   const [shuttleInfo, setShuttleInfo] = useState([]);
+  const [error, setError] = useState(null);
+  const [isFirebaseInitialized, setIsFirebaseInitialized] = useState(!!db);
+
+  // Debug logging
+  useEffect(() => {
+    console.log('SafetyFeatures - PartyId:', partyId);
+    console.log('SafetyFeatures - University:', university);
+    console.log('SafetyFeatures - Current User:', currentUser?.uid);
+    console.log('SafetyFeatures - User Profile:', userProfile);
+    console.log('SafetyFeatures - Firebase Initialized:', isFirebaseInitialized);
+    console.log('SafetyFeatures - Theme available:', !!themeContext);
+  }, [partyId, university, currentUser, userProfile, isFirebaseInitialized, themeContext]);
 
   useEffect(() => {
-    loadDesignatedDrivers();
-    loadDrinkHistory();
-    checkIfUserIsDD();
-  }, [partyId, user?.uid]);
+    // Check if Firebase is initialized
+    if (!db) {
+      console.error('Firebase is not initialized. Safety features are unavailable.');
+      setError('Firebase is not initialized. Safety features are unavailable.');
+      setIsFirebaseInitialized(false);
+      return;
+    } else {
+      setIsFirebaseInitialized(true);
+    }
+
+    if (currentUser && partyId) {
+      console.log('Loading safety data for user:', currentUser.uid, 'and party:', partyId);
+      loadDesignatedDrivers();
+      loadDrinkHistory();
+      checkIfUserIsDD();
+    }
+  }, [partyId, currentUser?.uid]);
 
   useEffect(() => {
     // Calculate BAC whenever drink history changes
     if (drinkHistory.length > 0) {
       const totalDrinks = drinkHistory.length;
-      const firstDrinkTime = drinkHistory[0].timestamp.toDate();
+      const firstDrinkTime = new Date(drinkHistory[0].timestamp);
       const hours = (new Date() - firstDrinkTime) / (1000 * 60 * 60);
       const bac = calculateBAC(
-        userProfile.gender,
-        userProfile.weight,
+        userPhysicalProfile.gender,
+        userPhysicalProfile.weight,
         totalDrinks,
         Math.max(0.5, hours) // Minimum 30 minutes to avoid extreme initial values
       );
@@ -65,232 +127,399 @@ const SafetyFeatures = ({ partyId, university }) => {
   }, [drinkHistory]);
 
   const loadDesignatedDrivers = async () => {
+    if (!isFirebaseInitialized) {
+      console.warn('Skipping loadDesignatedDrivers - Firebase not initialized');
+      return;
+    }
+    if (!currentUser || !partyId) {
+      console.warn('Skipping loadDesignatedDrivers - Missing user or partyId');
+      return;
+    }
+    
     try {
+      console.log('Loading designated drivers for party:', partyId);
       const drivers = await getDesignatedDrivers(partyId);
+      console.log('Loaded drivers:', drivers);
       setDdList(drivers);
+      setError(null);
     } catch (error) {
       console.error('Error loading designated drivers:', error);
-      Alert.alert('Error', 'Failed to load designated drivers');
+      setError('Failed to load designated drivers');
     }
   };
 
   const loadDrinkHistory = async () => {
-    if (!user?.uid) return;
+    if (!isFirebaseInitialized) {
+      console.warn('Skipping loadDrinkHistory - Firebase not initialized');
+      return;
+    }
+    if (!currentUser?.uid) {
+      console.warn('Skipping loadDrinkHistory - No user ID');
+      return;
+    }
     
     try {
+      console.log('Loading drink history for user:', currentUser.uid);
       const today = new Date();
-      const drinks = await getDrinkHistory(user.uid, today);
-      setDrinkHistory(drinks);
+      const drinks = await getDrinkHistory(currentUser.uid, today);
+      console.log('Loaded drinks:', drinks);
+      setDrinkHistory(drinks || []);
+      setError(null);
     } catch (error) {
       console.error('Error loading drink history:', error);
+      setError('Failed to load drink history');
     }
   };
 
   const checkIfUserIsDD = async () => {
-    if (!user?.uid || !partyId) return;
+    if (!isFirebaseInitialized) {
+      console.warn('Skipping checkIfUserIsDD - Firebase not initialized');
+      return;
+    }
+    if (!currentUser?.uid || !partyId) {
+      console.warn('Skipping checkIfUserIsDD - Missing user or partyId');
+      return;
+    }
     
     try {
+      console.log('Checking if user is DD:', currentUser.uid);
       const drivers = await getDesignatedDrivers(partyId);
-      const isUserDD = drivers.some(driver => driver.userId === user.uid);
+      const isUserDD = drivers.some(driver => driver.userId === currentUser.uid);
+      console.log('User is DD:', isUserDD);
       setIsDD(isUserDD);
+      setError(null);
     } catch (error) {
       console.error('Error checking if user is DD:', error);
+      setError('Failed to check designated driver status');
     }
   };
 
   const handleRegisterAsDD = async () => {
+    if (!isFirebaseInitialized) {
+      Alert.alert('Error', 'Firebase is not initialized. Safety features are unavailable.');
+      return;
+    }
+    
+    if (!currentUser?.uid || !partyId) {
+      Alert.alert('Error', 'You must be logged in to register as a designated driver');
+      return;
+    }
+    
     try {
-      await registerAsDD(partyId, user.uid, userInfo);
+      console.log('Registering as DD:', currentUser.uid);
+      await registerAsDD(partyId, currentUser.uid, userInfo);
       setIsDD(true);
       setShowDDModal(false);
       loadDesignatedDrivers();
       Alert.alert('Success', 'You are now registered as a designated driver');
+      setError(null);
     } catch (error) {
       console.error('Error registering as DD:', error);
       Alert.alert('Error', 'Failed to register as designated driver');
+      setError('Failed to register as designated driver');
     }
   };
 
   const handleUnregisterAsDD = async () => {
+    if (!isFirebaseInitialized) {
+      console.warn('Skipping handleUnregisterAsDD - Firebase not initialized');
+      return;
+    }
+    if (!currentUser?.uid || !partyId) {
+      console.warn('Skipping handleUnregisterAsDD - Missing user or partyId');
+      return;
+    }
+    
     try {
-      await unregisterAsDD(partyId, user.uid);
+      console.log('Unregistering as DD:', currentUser.uid);
+      await unregisterAsDD(partyId, currentUser.uid);
       setIsDD(false);
       loadDesignatedDrivers();
       Alert.alert('Success', 'You are no longer a designated driver');
+      setError(null);
     } catch (error) {
       console.error('Error unregistering as DD:', error);
       Alert.alert('Error', 'Failed to unregister as designated driver');
+      setError('Failed to unregister as designated driver');
     }
   };
 
   const handleRequestRide = async () => {
+    if (!isFirebaseInitialized) {
+      Alert.alert('Error', 'Firebase is not initialized. Safety features are unavailable.');
+      return;
+    }
+    
+    if (!currentUser?.uid) {
+      Alert.alert('Error', 'You must be logged in to request a ride');
+      return;
+    }
+    
     if (!selectedDD) {
       Alert.alert('Error', 'Please select a designated driver');
       return;
     }
 
     try {
-      await requestRide(selectedDD.userId, user.uid, {
+      console.log('Requesting ride from:', selectedDD.userId);
+      await requestRide(selectedDD.userId, currentUser.uid, {
         location: pickupLocation,
         timestamp: new Date()
       });
       setShowRideModal(false);
       Alert.alert('Success', 'Ride request sent to the driver');
+      setError(null);
     } catch (error) {
       console.error('Error requesting ride:', error);
       Alert.alert('Error', 'Failed to request ride');
+      setError('Failed to request ride');
     }
   };
 
   const handleAddDrink = async (drinkType = 'standard') => {
+    if (!isFirebaseInitialized) {
+      Alert.alert('Error', 'Firebase is not initialized. Safety features are unavailable.');
+      return;
+    }
+    
+    if (!currentUser?.uid) {
+      Alert.alert('Error', 'You must be logged in to track drinks');
+      return;
+    }
+    
     try {
+      console.log('Adding drink for user:', currentUser.uid);
       const drinkInfo = {
         type: drinkType,
         timestamp: new Date(),
         estimatedAlcoholContent: drinkType === 'beer' ? 0.05 : drinkType === 'wine' ? 0.12 : 0.4
       };
       
-      await trackDrink(user.uid, drinkInfo);
+      await trackDrink(currentUser.uid, drinkInfo);
       loadDrinkHistory();
       setShowDrinkModal(false);
+      setError(null);
     } catch (error) {
       console.error('Error tracking drink:', error);
       Alert.alert('Error', 'Failed to track drink');
+      setError('Failed to track drink');
     }
   };
 
   const handleGetMeHome = async () => {
+    if (!isFirebaseInitialized) {
+      Alert.alert('Error', 'Firebase is not initialized. Safety features are unavailable.');
+      return;
+    }
+    
+    if (!currentUser?.uid) {
+      Alert.alert('Error', 'You must be logged in to use this feature');
+      return;
+    }
+    
     try {
-      // Get user's current location
-      // For demo purposes, we'll use a placeholder
-      const currentLocation = { latitude: 37.7749, longitude: -122.4194 };
+      console.log('Getting home options for university:', university);
+      // Load designated drivers
+      const drivers = await getDesignatedDrivers(partyId);
+      setDdList(drivers);
       
-      // Get rideshare options
-      const rideshare = await getRideshareOptions(currentLocation);
-      setRideshareOptions(rideshare);
+      // Load rideshare options
+      const rideshare = await getRideshareOptions(university);
+      setRideshareOptions(rideshare || []);
       
-      // Get campus shuttles
+      // Load campus shuttles
       const shuttles = await getCampusShuttles(university);
-      setShuttleInfo(shuttles);
+      setShuttleInfo(shuttles || []);
       
       setShowRideModal(true);
+      setError(null);
     } catch (error) {
-      console.error('Error getting transportation options:', error);
-      Alert.alert('Error', 'Failed to get transportation options');
+      console.error('Error getting home options:', error);
+      Alert.alert('Error', 'Failed to load transportation options');
+      setError('Failed to load transportation options');
     }
   };
 
   const getBACColor = () => {
-    if (estimatedBAC < 0.04) return 'green';
-    if (estimatedBAC < 0.08) return 'orange';
-    return 'red';
+    if (estimatedBAC >= 0.08) return theme.error || '#ef4444';
+    if (estimatedBAC >= 0.05) return '#FFA500'; // Orange
+    return theme.success || '#10b981';
   };
 
   const getBACWarning = () => {
-    if (estimatedBAC < 0.04) return 'Safe';
-    if (estimatedBAC < 0.08) return 'Caution';
-    return 'Danger - Do Not Drive';
+    if (estimatedBAC >= 0.08) return "You are likely over the legal limit to drive";
+    if (estimatedBAC >= 0.05) return "You are approaching the legal limit to drive";
+    return "You are likely under the legal limit to drive";
   };
 
-  return (
-    <View style={[styles.container, { backgroundColor: colors.card }]}>
-      <Text style={[styles.title, { color: colors.text }]}>Safety Features</Text>
-      
-      {/* Designated Driver Section */}
-      <View style={styles.section}>
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>Designated Driver</Text>
-        
-        {isDD ? (
-          <TouchableOpacity 
-            style={[styles.button, { backgroundColor: colors.error }]} 
-            onPress={handleUnregisterAsDD}
-          >
-            <Text style={styles.buttonText}>Unregister as DD</Text>
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity 
-            style={[styles.button, { backgroundColor: colors.primary }]} 
-            onPress={() => setShowDDModal(true)}
-          >
-            <Text style={styles.buttonText}>Volunteer as DD</Text>
-          </TouchableOpacity>
-        )}
-        
-        <TouchableOpacity 
-          style={[styles.button, { backgroundColor: colors.secondary }]} 
-          onPress={handleGetMeHome}
-        >
-          <Text style={styles.buttonText}>Get Me Home</Text>
-        </TouchableOpacity>
-      </View>
-      
-      {/* Drink Counter Section */}
-      <View style={styles.section}>
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>Drink Counter</Text>
-        
-        <View style={styles.drinkInfo}>
-          <Text style={[styles.drinkCount, { color: colors.text }]}>
-            Drinks: {drinkCount}
+  if (!isFirebaseInitialized) {
+    return (
+      <View style={[styles.container, { backgroundColor: theme.card || '#ffffff' }]}>
+        <Text style={[styles.title, { color: theme.text || '#111827' }]}>Safety Features</Text>
+        <View style={styles.errorContainer}>
+          <Text style={[styles.errorText, { color: theme.error || '#ef4444' }]}>
+            Firebase is not initialized. Safety features are unavailable.
           </Text>
-          <Text style={[styles.bac, { color: getBACColor() }]}>
-            Est. BAC: {estimatedBAC.toFixed(2)}% - {getBACWarning()}
+          <TouchableOpacity 
+            style={[styles.button, { backgroundColor: theme.primary || '#6366f1' }]} 
+            onPress={() => {
+              setIsFirebaseInitialized(!!db);
+              if (db && currentUser && partyId) {
+                loadDesignatedDrivers();
+                loadDrinkHistory();
+                checkIfUserIsDD();
+              }
+            }}
+          >
+            <Text style={styles.buttonText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  // If there's an error and user is not authenticated, show login prompt
+  if (error && !currentUser) {
+    return (
+      <View style={[styles.container, { backgroundColor: theme.card || '#ffffff' }]}>
+        <Text style={[styles.title, { color: theme.text || '#111827' }]}>Safety Features</Text>
+        <View style={styles.errorContainer}>
+          <Text style={[styles.errorText, { color: theme.error || '#ef4444' }]}>
+            Please log in to use safety features
           </Text>
         </View>
-        
-        <TouchableOpacity 
-          style={[styles.button, { backgroundColor: colors.primary }]} 
-          onPress={() => setShowDrinkModal(true)}
-        >
-          <Text style={styles.buttonText}>Add Drink</Text>
-        </TouchableOpacity>
       </View>
+    );
+  }
 
-      {/* DD Registration Modal */}
+  return (
+    <View style={[styles.container, { backgroundColor: theme.card || '#ffffff' }]}>
+      <Text style={[styles.title, { color: theme.text || '#111827' }]}>Safety Features</Text>
+      
+      {error ? (
+        <View style={styles.errorContainer}>
+          <Text style={[styles.errorText, { color: theme.error || '#ef4444' }]}>{error}</Text>
+          <TouchableOpacity 
+            style={[styles.button, { backgroundColor: theme.primary || '#6366f1' }]} 
+            onPress={() => {
+              loadDesignatedDrivers();
+              loadDrinkHistory();
+              checkIfUserIsDD();
+            }}
+          >
+            <Text style={styles.buttonText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <View style={styles.content}>
+          {/* Designated Driver Section */}
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: theme.text || '#111827' }]}>Designated Driver</Text>
+            
+            {isDD ? (
+              <TouchableOpacity 
+                style={[styles.button, { backgroundColor: theme.error || '#ef4444' }]} 
+                onPress={handleUnregisterAsDD}
+              >
+                <Text style={styles.buttonText}>Unregister as Designated Driver</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity 
+                style={[styles.button, { backgroundColor: theme.primary || '#6366f1' }]} 
+                onPress={() => setShowDDModal(true)}
+              >
+                <Text style={styles.buttonText}>Register as Designated Driver</Text>
+              </TouchableOpacity>
+            )}
+            
+            <TouchableOpacity 
+              style={[styles.button, { backgroundColor: theme.secondary || '#a855f7' }]} 
+              onPress={handleGetMeHome}
+            >
+              <Text style={styles.buttonText}>Get Me Home</Text>
+            </TouchableOpacity>
+          </View>
+          
+          {/* Drink Counter Section */}
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: theme.text || '#111827' }]}>Drink Counter</Text>
+            
+            <View style={styles.drinkInfo}>
+              <Text style={[styles.drinkCount, { color: theme.text || '#111827' }]}>
+                Drinks: {drinkCount}
+              </Text>
+              <Text style={[styles.bac, { color: getBACColor() }]}>
+                Estimated BAC: {estimatedBAC.toFixed(3)}
+              </Text>
+              <Text style={[styles.bacWarning, { color: getBACColor() }]}>
+                {getBACWarning()}
+              </Text>
+            </View>
+            
+            <TouchableOpacity 
+              style={[styles.button, { backgroundColor: theme.primary || '#6366f1' }]} 
+              onPress={() => setShowDrinkModal(true)}
+            >
+              <Text style={styles.buttonText}>Add Drink</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+      
+      {/* Designated Driver Modal */}
       <Modal
         visible={showDDModal}
-        transparent={true}
+        transparent
         animationType="slide"
-        onRequestClose={() => setShowDDModal(false)}
       >
         <View style={styles.modalContainer}>
-          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
-            <Text style={[styles.modalTitle, { color: colors.text }]}>Register as Designated Driver</Text>
+          <View style={[styles.modalContent, { backgroundColor: theme.card || '#ffffff' }]}>
+            <Text style={[styles.modalTitle, { color: theme.text || '#111827' }]}>Register as Designated Driver</Text>
             
             <TextInput
-              style={[styles.input, { backgroundColor: colors.background, color: colors.text }]}
+              style={[styles.input, { 
+                backgroundColor: theme.background || '#f8f9fa', 
+                color: theme.text || '#111827' 
+              }]}
               placeholder="Phone Number"
-              placeholderTextColor={colors.text + '80'}
+              placeholderTextColor={(theme.text || '#111827') + '80'}
               value={userInfo.phoneNumber}
               onChangeText={(text) => setUserInfo({...userInfo, phoneNumber: text})}
             />
             
             <TextInput
-              style={[styles.input, { backgroundColor: colors.background, color: colors.text }]}
+              style={[styles.input, { 
+                backgroundColor: theme.background || '#f8f9fa', 
+                color: theme.text || '#111827' 
+              }]}
               placeholder="Car Info (Make, Model, Color)"
-              placeholderTextColor={colors.text + '80'}
+              placeholderTextColor={(theme.text || '#111827') + '80'}
               value={userInfo.carInfo}
               onChangeText={(text) => setUserInfo({...userInfo, carInfo: text})}
             />
             
             <TextInput
-              style={[styles.input, { backgroundColor: colors.background, color: colors.text }]}
+              style={[styles.input, { 
+                backgroundColor: theme.background || '#f8f9fa', 
+                color: theme.text || '#111827' 
+              }]}
               placeholder="Max Passengers"
-              placeholderTextColor={colors.text + '80'}
+              placeholderTextColor={(theme.text || '#111827') + '80'}
               keyboardType="number-pad"
               value={userInfo.maxPassengers.toString()}
-              onChangeText={(text) => setUserInfo({...userInfo, maxPassengers: parseInt(text) || 1})}
+              onChangeText={(text) => setUserInfo({...userInfo, maxPassengers: parseInt(text) || 4})}
             />
             
             <View style={styles.modalButtons}>
               <TouchableOpacity 
-                style={[styles.modalButton, { backgroundColor: colors.error }]} 
+                style={[styles.modalButton, { backgroundColor: theme.error || '#ef4444' }]} 
                 onPress={() => setShowDDModal(false)}
               >
                 <Text style={styles.buttonText}>Cancel</Text>
               </TouchableOpacity>
               
               <TouchableOpacity 
-                style={[styles.modalButton, { backgroundColor: colors.primary }]} 
+                style={[styles.modalButton, { backgroundColor: theme.primary || '#6366f1' }]} 
                 onPress={handleRegisterAsDD}
               >
                 <Text style={styles.buttonText}>Register</Text>
@@ -299,40 +528,41 @@ const SafetyFeatures = ({ partyId, university }) => {
           </View>
         </View>
       </Modal>
-
-      {/* Ride Request Modal */}
+      
+      {/* Ride Modal */}
       <Modal
         visible={showRideModal}
-        transparent={true}
+        transparent
         animationType="slide"
-        onRequestClose={() => setShowRideModal(false)}
       >
         <View style={styles.modalContainer}>
-          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
-            <Text style={[styles.modalTitle, { color: colors.text }]}>Get Me Home</Text>
+          <View style={[styles.modalContent, { backgroundColor: theme.card || '#ffffff' }]}>
+            <Text style={[styles.modalTitle, { color: theme.text || '#111827' }]}>Get Me Home</Text>
             
-            <Text style={[styles.modalSubtitle, { color: colors.text }]}>Designated Drivers</Text>
+            <Text style={[styles.modalSubtitle, { color: theme.text || '#111827' }]}>Designated Drivers</Text>
             <ScrollView style={styles.ddList}>
               {ddList.length > 0 ? (
                 ddList.map((driver, index) => (
-                  <TouchableOpacity
+                  <TouchableOpacity 
                     key={index}
                     style={[
                       styles.ddItem,
-                      selectedDD?.userId === driver.userId && { backgroundColor: colors.primary + '40' }
+                      selectedDD?.userId === driver.userId && { 
+                        backgroundColor: (theme.primary || '#6366f1') + '40' 
+                      }
                     ]}
                     onPress={() => setSelectedDD(driver)}
                   >
-                    <Text style={[styles.ddName, { color: colors.text }]}>
+                    <Text style={[styles.ddName, { color: theme.text || '#111827' }]}>
                       {driver.displayName || 'Anonymous Driver'}
                     </Text>
-                    <Text style={[styles.ddInfo, { color: colors.text + '80' }]}>
+                    <Text style={[styles.ddInfo, { color: (theme.text || '#111827') + '80' }]}>
                       {driver.carInfo} • Max: {driver.maxPassengers} passengers
                     </Text>
                   </TouchableOpacity>
                 ))
               ) : (
-                <Text style={[styles.emptyText, { color: colors.text + '80' }]}>
+                <Text style={[styles.emptyText, { color: (theme.text || '#111827') + '80' }]}>
                   No designated drivers available
                 </Text>
               )}
@@ -341,15 +571,18 @@ const SafetyFeatures = ({ partyId, university }) => {
             {selectedDD && (
               <>
                 <TextInput
-                  style={[styles.input, { backgroundColor: colors.background, color: colors.text }]}
+                  style={[styles.input, { 
+                    backgroundColor: theme.background || '#f8f9fa', 
+                    color: theme.text || '#111827' 
+                  }]}
                   placeholder="Your Pickup Location"
-                  placeholderTextColor={colors.text + '80'}
+                  placeholderTextColor={(theme.text || '#111827') + '80'}
                   value={pickupLocation}
                   onChangeText={setPickupLocation}
                 />
                 
                 <TouchableOpacity 
-                  style={[styles.button, { backgroundColor: colors.primary }]} 
+                  style={[styles.button, { backgroundColor: theme.primary || '#6366f1' }]} 
                   onPress={handleRequestRide}
                 >
                   <Text style={styles.buttonText}>Request Ride</Text>
@@ -357,17 +590,17 @@ const SafetyFeatures = ({ partyId, university }) => {
               </>
             )}
             
-            <Text style={[styles.modalSubtitle, { color: colors.text, marginTop: 20 }]}>Other Options</Text>
+            <Text style={[styles.modalSubtitle, { color: theme.text || '#111827', marginTop: 20 }]}>Other Options</Text>
             
             <View style={styles.otherOptions}>
               {rideshareOptions.map((option, index) => (
                 <TouchableOpacity 
                   key={index}
-                  style={[styles.optionItem, { backgroundColor: colors.card }]}
+                  style={[styles.optionItem, { backgroundColor: theme.card || '#ffffff' }]}
                   onPress={() => Alert.alert('Opening', `Opening ${option.name} app...`)}
                 >
-                  <Text style={[styles.optionName, { color: colors.text }]}>{option.name}</Text>
-                  <Text style={[styles.optionInfo, { color: colors.text + '80' }]}>
+                  <Text style={[styles.optionName, { color: theme.text || '#111827' }]}>{option.name}</Text>
+                  <Text style={[styles.optionInfo, { color: (theme.text || '#111827') + '80' }]}>
                     Est. ${option.price} • {option.eta} min
                   </Text>
                 </TouchableOpacity>
@@ -376,13 +609,13 @@ const SafetyFeatures = ({ partyId, university }) => {
               {shuttleInfo.map((shuttle, index) => (
                 <TouchableOpacity 
                   key={index}
-                  style={[styles.optionItem, { backgroundColor: colors.card }]}
+                  style={[styles.optionItem, { backgroundColor: theme.card || '#ffffff' }]}
                   onPress={() => Alert.alert('Info', shuttle.details)}
                 >
-                  <Text style={[styles.optionName, { color: colors.text }]}>
+                  <Text style={[styles.optionName, { color: theme.text || '#111827' }]}>
                     {shuttle.name}
                   </Text>
-                  <Text style={[styles.optionInfo, { color: colors.text + '80' }]}>
+                  <Text style={[styles.optionInfo, { color: (theme.text || '#111827') + '80' }]}>
                     Next: {shuttle.nextDeparture} • Free
                   </Text>
                 </TouchableOpacity>
@@ -390,7 +623,7 @@ const SafetyFeatures = ({ partyId, university }) => {
             </View>
             
             <TouchableOpacity 
-              style={[styles.button, { backgroundColor: colors.error, marginTop: 20 }]} 
+              style={[styles.button, { backgroundColor: theme.error || '#ef4444', marginTop: 20 }]} 
               onPress={() => setShowRideModal(false)}
             >
               <Text style={styles.buttonText}>Close</Text>
@@ -398,84 +631,101 @@ const SafetyFeatures = ({ partyId, university }) => {
           </View>
         </View>
       </Modal>
-
-      {/* Drink Tracking Modal */}
+      
+      {/* Drink Modal */}
       <Modal
         visible={showDrinkModal}
-        transparent={true}
+        transparent
         animationType="slide"
-        onRequestClose={() => setShowDrinkModal(false)}
       >
         <View style={styles.modalContainer}>
-          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
-            <Text style={[styles.modalTitle, { color: colors.text }]}>Add Drink</Text>
+          <View style={[styles.modalContent, { backgroundColor: theme.card || '#ffffff' }]}>
+            <Text style={[styles.modalTitle, { color: theme.text || '#111827' }]}>Add Drink</Text>
             
             <View style={styles.drinkButtons}>
               <TouchableOpacity 
-                style={[styles.drinkButton, { backgroundColor: colors.primary }]} 
+                style={[styles.drinkButton, { backgroundColor: theme.primary || '#6366f1' }]} 
                 onPress={() => handleAddDrink('beer')}
               >
-                <Ionicons name="beer" size={24} color="white" />
-                <Text style={styles.drinkButtonText}>Beer</Text>
+                <Text style={styles.buttonText}>Beer</Text>
               </TouchableOpacity>
               
               <TouchableOpacity 
-                style={[styles.drinkButton, { backgroundColor: colors.primary }]} 
+                style={[styles.drinkButton, { backgroundColor: theme.primary || '#6366f1' }]} 
                 onPress={() => handleAddDrink('wine')}
               >
-                <Ionicons name="wine" size={24} color="white" />
-                <Text style={styles.drinkButtonText}>Wine</Text>
+                <Text style={styles.buttonText}>Wine</Text>
               </TouchableOpacity>
               
               <TouchableOpacity 
-                style={[styles.drinkButton, { backgroundColor: colors.primary }]} 
+                style={[styles.drinkButton, { backgroundColor: theme.primary || '#6366f1' }]} 
                 onPress={() => handleAddDrink('shot')}
               >
-                <Ionicons name="flask" size={24} color="white" />
-                <Text style={styles.drinkButtonText}>Shot</Text>
+                <Text style={styles.buttonText}>Shot</Text>
               </TouchableOpacity>
             </View>
             
             <View style={styles.userProfileInputs}>
-              <Text style={[styles.inputLabel, { color: colors.text }]}>Your Information (for BAC calculation)</Text>
+              <Text style={[styles.inputLabel, { color: theme.text || '#111827' }]}>Your Information (for BAC calculation)</Text>
               
               <View style={styles.profileRow}>
                 <TouchableOpacity
                   style={[
                     styles.genderButton,
-                    { backgroundColor: userProfile.gender === 'male' ? colors.primary : colors.background }
+                    { backgroundColor: userPhysicalProfile.gender === 'male' ? 
+                      (theme.primary || '#6366f1') : 
+                      (theme.background || '#f8f9fa') 
+                    }
                   ]}
-                  onPress={() => setUserProfile({...userProfile, gender: 'male'})}
+                  onPress={() => setUserPhysicalProfile({...userPhysicalProfile, gender: 'male'})}
                 >
-                  <Text style={[styles.genderButtonText, { color: userProfile.gender === 'male' ? 'white' : colors.text }]}>Male</Text>
+                  <Text style={[
+                    styles.genderButtonText, 
+                    { color: userPhysicalProfile.gender === 'male' ? 
+                      'white' : 
+                      (theme.text || '#111827') 
+                    }
+                  ]}>Male</Text>
                 </TouchableOpacity>
                 
                 <TouchableOpacity
                   style={[
                     styles.genderButton,
-                    { backgroundColor: userProfile.gender === 'female' ? colors.primary : colors.background }
+                    { backgroundColor: userPhysicalProfile.gender === 'female' ? 
+                      (theme.primary || '#6366f1') : 
+                      (theme.background || '#f8f9fa') 
+                    }
                   ]}
-                  onPress={() => setUserProfile({...userProfile, gender: 'female'})}
+                  onPress={() => setUserPhysicalProfile({...userPhysicalProfile, gender: 'female'})}
                 >
-                  <Text style={[styles.genderButtonText, { color: userProfile.gender === 'female' ? 'white' : colors.text }]}>Female</Text>
+                  <Text style={[
+                    styles.genderButtonText, 
+                    { color: userPhysicalProfile.gender === 'female' ? 
+                      'white' : 
+                      (theme.text || '#111827') 
+                    }
+                  ]}>Female</Text>
                 </TouchableOpacity>
               </View>
               
               <TextInput
-                style={[styles.input, { backgroundColor: colors.background, color: colors.text }]}
+                style={[styles.input, { 
+                  backgroundColor: theme.background || '#f8f9fa', 
+                  color: theme.text || '#111827' 
+                }]}
                 placeholder="Weight (kg)"
-                placeholderTextColor={colors.text + '80'}
+                placeholderTextColor={(theme.text || '#111827') + '80'}
                 keyboardType="number-pad"
-                value={userProfile.weight.toString()}
-                onChangeText={(text) => setUserProfile({...userProfile, weight: parseInt(text) || 70})}
+                value={userPhysicalProfile.weight.toString()}
+                onChangeText={(text) => setUserPhysicalProfile({...userPhysicalProfile, weight: parseInt(text) || 70})}
               />
             </View>
             
             <TouchableOpacity 
-              style={[styles.button, { backgroundColor: colors.error, marginTop: 20 }]} 
+              style={[styles.button, { backgroundColor: theme.error || '#ef4444', marginTop: 20 }]} 
               onPress={() => setShowDrinkModal(false)}
             >
-              <Text style={styles.buttonText}>Cancel</Text>
+              <Text style={styles.buttonText}>Close</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -523,6 +773,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   bac: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  bacWarning: {
     fontSize: 16,
     fontWeight: '600',
   },
@@ -640,6 +894,16 @@ const styles = StyleSheet.create({
   },
   genderButtonText: {
     fontWeight: '600',
+  },
+  errorContainer: {
+    padding: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  errorText: {
+    fontSize: 16,
+    marginBottom: 16,
+    textAlign: 'center',
   },
 });
 

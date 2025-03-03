@@ -12,14 +12,54 @@ import {
   orderBy,
   Timestamp,
   serverTimestamp,
-  increment
+  increment,
+  deleteDoc
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { Alert, Linking } from 'react-native';
 
+// Helper function to check if Firestore is initialized
+const checkFirestore = () => {
+  if (!db) {
+    throw new Error('Firestore is not initialized');
+  }
+  return true;
+};
+
+// Helper function to ensure collections exist
+const ensureCollectionExists = async (collectionName) => {
+  try {
+    checkFirestore();
+    // Just query the collection to see if it exists
+    await getDocs(query(collection(db, collectionName), where('__dummy__', '==', true)));
+    return true;
+  } catch (error) {
+    console.error(`Error checking collection ${collectionName}:`, error);
+    // If the error is about permissions, the collection likely exists
+    if (error.code === 'permission-denied') {
+      return true;
+    }
+    // For other errors, we'll create the collection by adding and immediately deleting a dummy document
+    try {
+      const dummyRef = await addDoc(collection(db, collectionName), { 
+        __dummy__: true,
+        createdAt: serverTimestamp()
+      });
+      await deleteDoc(dummyRef);
+      return true;
+    } catch (innerError) {
+      console.error(`Failed to create collection ${collectionName}:`, innerError);
+      throw innerError;
+    }
+  }
+};
+
 // Register as a designated driver for a party
 export const registerAsDD = async (partyId, userId, userInfo) => {
   try {
+    checkFirestore();
+    await ensureCollectionExists('designated_drivers');
+    
     // Check if user is already registered as DD
     const ddQuery = query(
       collection(db, 'designated_drivers'),
@@ -64,6 +104,9 @@ export const registerAsDD = async (partyId, userId, userInfo) => {
 // Unregister as a designated driver
 export const unregisterAsDD = async (partyId, userId) => {
   try {
+    checkFirestore();
+    await ensureCollectionExists('designated_drivers');
+    
     // Find DD record
     const ddQuery = query(
       collection(db, 'designated_drivers'),
@@ -99,6 +142,9 @@ export const unregisterAsDD = async (partyId, userId) => {
 // Get designated drivers for a party
 export const getDesignatedDrivers = async (partyId) => {
   try {
+    checkFirestore();
+    await ensureCollectionExists('designated_drivers');
+    
     const ddQuery = query(
       collection(db, 'designated_drivers'),
       where('partyId', '==', partyId),
@@ -133,6 +179,9 @@ export const getDesignatedDrivers = async (partyId) => {
 // Request a ride from a designated driver
 export const requestRide = async (ddId, userId, pickupInfo) => {
   try {
+    checkFirestore();
+    await ensureCollectionExists('ride_requests');
+    
     // Check if user already requested a ride
     const rideQuery = query(
       collection(db, 'ride_requests'),
@@ -177,6 +226,9 @@ export const requestRide = async (ddId, userId, pickupInfo) => {
 // Track drinks for a user
 export const trackDrink = async (userId, drinkInfo) => {
   try {
+    checkFirestore();
+    await ensureCollectionExists('drink_tracking');
+    
     // Get current date (without time)
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -232,6 +284,9 @@ export const trackDrink = async (userId, drinkInfo) => {
 // Get drink history for a user
 export const getDrinkHistory = async (userId, date = null) => {
   try {
+    checkFirestore();
+    await ensureCollectionExists('drink_tracking');
+    
     let drinkQuery;
     
     if (date) {
@@ -249,7 +304,7 @@ export const getDrinkHistory = async (userId, date = null) => {
         where('date', '<=', endDate)
       );
     } else {
-      // Get all records
+      // Get all drink history
       drinkQuery = query(
         collection(db, 'drink_tracking'),
         where('userId', '==', userId),
@@ -258,25 +313,16 @@ export const getDrinkHistory = async (userId, date = null) => {
     }
     
     const querySnapshot = await getDocs(drinkQuery);
-    const drinkHistory = [];
     
-    for (const docSnapshot of querySnapshot.docs) {
-      const drinkData = docSnapshot.data();
-      
-      drinkHistory.push({
-        id: docSnapshot.id,
-        ...drinkData,
-        date: drinkData.date?.toDate?.() || new Date(),
-        createdAt: drinkData.createdAt?.toDate?.() || new Date(),
-        updatedAt: drinkData.updatedAt?.toDate?.() || new Date(),
-        drinks: drinkData.drinks.map(drink => ({
-          ...drink,
-          timestamp: drink.timestamp?.toDate?.() || new Date()
-        }))
-      });
+    if (querySnapshot.empty) {
+      return [];
     }
     
-    return drinkHistory;
+    // Get the most recent drink record
+    const drinkDoc = querySnapshot.docs[0];
+    const drinkData = drinkDoc.data();
+    
+    return drinkData.drinks || [];
   } catch (error) {
     console.error('Error getting drink history:', error);
     return [];

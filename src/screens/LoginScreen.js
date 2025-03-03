@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -17,30 +17,35 @@ export default function LoginScreen({ navigation }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const [errorMessage, setErrorMessage] = useState('');
+  const { login, authError } = useAuth();
+
+  // Update local error message when authError changes
+  useEffect(() => {
+    if (authError) {
+      setErrorMessage(authError);
+    }
+  }, [authError]);
 
   const handleLogin = async () => {
     if (!email || !password) {
-      Alert.alert('Error', 'Please fill in all fields');
+      setErrorMessage('Please fill in all fields');
       return;
     }
 
     try {
       setLoading(true);
+      setErrorMessage('');
       await login(email, password);
       navigation.navigate('Home');
     } catch (error) {
-      let errorMessage = 'Failed to login. Please try again.';
+      // Error is already handled in AuthContext and set to authError
+      console.log('Login failed:', error.code);
       
-      if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
-        errorMessage = 'Invalid email or password';
-      } else if (error.code === 'auth/invalid-email') {
-        errorMessage = 'Invalid email address';
-      } else if (error.code === 'auth/too-many-requests') {
-        errorMessage = 'Too many failed login attempts. Please try again later.';
+      // If there's no authError set (which is unusual), set a generic message
+      if (!authError) {
+        setErrorMessage('Failed to login. Please try again.');
       }
-      
-      Alert.alert('Error', errorMessage);
     } finally {
       setLoading(false);
     }
@@ -55,11 +60,20 @@ export default function LoginScreen({ navigation }) {
         <View style={styles.form}>
           <Text style={styles.title}>Welcome Back</Text>
           
+          {errorMessage ? (
+            <View style={styles.errorContainer}>
+              <Text style={styles.errorText}>{errorMessage}</Text>
+            </View>
+          ) : null}
+          
           <TextInput
             style={styles.input}
             placeholder="Email"
             value={email}
-            onChangeText={setEmail}
+            onChangeText={(text) => {
+              setEmail(text);
+              setErrorMessage(''); // Clear error when user types
+            }}
             keyboardType="email-address"
             autoCapitalize="none"
             autoComplete="email"
@@ -69,7 +83,10 @@ export default function LoginScreen({ navigation }) {
             style={styles.input}
             placeholder="Password"
             value={password}
-            onChangeText={setPassword}
+            onChangeText={(text) => {
+              setPassword(text);
+              setErrorMessage(''); // Clear error when user types
+            }}
             secureTextEntry
           />
           
@@ -140,5 +157,17 @@ const styles = StyleSheet.create({
     color: '#4f46e5',
     textAlign: 'center',
     marginTop: 20,
+  },
+  errorContainer: {
+    backgroundColor: '#fee2e2',
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: '#fecaca',
+  },
+  errorText: {
+    color: '#b91c1c',
+    textAlign: 'center',
   },
 });

@@ -1,7 +1,19 @@
-import firebase from '../config/firebase';
-import 'firebase/firestore';
-
-const db = firebase.firestore();
+import { 
+  collection, 
+  doc, 
+  setDoc, 
+  getDocs, 
+  getDoc, 
+  updateDoc, 
+  query, 
+  where, 
+  orderBy, 
+  serverTimestamp, 
+  increment, 
+  arrayUnion, 
+  arrayRemove 
+} from 'firebase/firestore';
+import { db } from '../firebase/config';
 
 /**
  * Create a new collaborative playlist for a party
@@ -12,14 +24,15 @@ const db = firebase.firestore();
  */
 export const createPlaylist = async (partyId, creatorId, playlistInfo) => {
   try {
-    const playlistRef = db.collection('parties').doc(partyId).collection('playlists').doc();
+    const playlistsCollection = collection(db, 'parties', partyId, 'playlists');
+    const playlistRef = doc(playlistsCollection);
     
-    await playlistRef.set({
+    await setDoc(playlistRef, {
       name: playlistInfo.name,
       description: playlistInfo.description || '',
       creatorId,
-      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
       isActive: true,
       voteRequired: playlistInfo.voteRequired || false,
       minVotes: playlistInfo.minVotes || 1,
@@ -40,10 +53,14 @@ export const createPlaylist = async (partyId, creatorId, playlistInfo) => {
  */
 export const getPartyPlaylists = async (partyId) => {
   try {
-    const playlistsSnapshot = await db.collection('parties').doc(partyId).collection('playlists')
-      .where('isActive', '==', true)
-      .orderBy('createdAt', 'desc')
-      .get();
+    const playlistsCollection = collection(db, 'parties', partyId, 'playlists');
+    const playlistsQuery = query(
+      playlistsCollection,
+      where('isActive', '==', true),
+      orderBy('createdAt', 'desc')
+    );
+    
+    const playlistsSnapshot = await getDocs(playlistsQuery);
     
     return playlistsSnapshot.docs.map(doc => ({
       id: doc.id,
@@ -65,11 +82,10 @@ export const getPartyPlaylists = async (partyId) => {
  */
 export const addSongToPlaylist = async (partyId, playlistId, userId, songInfo) => {
   try {
-    const songRef = db.collection('parties').doc(partyId)
-      .collection('playlists').doc(playlistId)
-      .collection('songs').doc();
+    const songsCollection = collection(db, 'parties', partyId, 'playlists', playlistId, 'songs');
+    const songRef = doc(songsCollection);
     
-    await songRef.set({
+    await setDoc(songRef, {
       title: songInfo.title,
       artist: songInfo.artist,
       albumArt: songInfo.albumArt || null,
@@ -77,7 +93,7 @@ export const addSongToPlaylist = async (partyId, playlistId, userId, songInfo) =
       spotifyId: songInfo.spotifyId || null,
       youtubeId: songInfo.youtubeId || null,
       addedBy: userId,
-      addedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      addedAt: serverTimestamp(),
       votes: 1,
       voters: [userId],
       played: false,
@@ -100,17 +116,25 @@ export const addSongToPlaylist = async (partyId, playlistId, userId, songInfo) =
  */
 export const getPlaylistSongs = async (partyId, playlistId, includePlayedSongs = false) => {
   try {
-    let query = db.collection('parties').doc(partyId)
-      .collection('playlists').doc(playlistId)
-      .collection('songs')
-      .orderBy('votes', 'desc')
-      .orderBy('addedAt', 'asc');
+    const songsCollection = collection(db, 'parties', partyId, 'playlists', playlistId, 'songs');
     
+    let songsQuery;
     if (!includePlayedSongs) {
-      query = query.where('played', '==', false);
+      songsQuery = query(
+        songsCollection,
+        where('played', '==', false),
+        orderBy('votes', 'desc'),
+        orderBy('addedAt', 'asc')
+      );
+    } else {
+      songsQuery = query(
+        songsCollection,
+        orderBy('votes', 'desc'),
+        orderBy('addedAt', 'asc')
+      );
     }
     
-    const songsSnapshot = await query.get();
+    const songsSnapshot = await getDocs(songsQuery);
     
     return songsSnapshot.docs.map(doc => ({
       id: doc.id,
@@ -132,30 +156,27 @@ export const getPlaylistSongs = async (partyId, playlistId, includePlayedSongs =
  */
 export const voteSong = async (partyId, playlistId, songId, userId) => {
   try {
-    const songRef = db.collection('parties').doc(partyId)
-      .collection('playlists').doc(playlistId)
-      .collection('songs').doc(songId);
+    const songRef = doc(db, 'parties', partyId, 'playlists', playlistId, 'songs', songId);
+    const songSnapshot = await getDoc(songRef);
     
-    const songDoc = await songRef.get();
-    
-    if (!songDoc.exists) {
+    if (!songSnapshot.exists()) {
       throw new Error('Song not found');
     }
     
-    const songData = songDoc.data();
+    const songData = songSnapshot.data();
     
     // Check if user has already voted
     if (songData.voters.includes(userId)) {
       // Remove vote
-      await songRef.update({
-        votes: firebase.firestore.FieldValue.increment(-1),
-        voters: firebase.firestore.FieldValue.arrayRemove(userId)
+      await updateDoc(songRef, {
+        votes: increment(-1),
+        voters: arrayRemove(userId)
       });
     } else {
       // Add vote
-      await songRef.update({
-        votes: firebase.firestore.FieldValue.increment(1),
-        voters: firebase.firestore.FieldValue.arrayUnion(userId)
+      await updateDoc(songRef, {
+        votes: increment(1),
+        voters: arrayUnion(userId)
       });
     }
   } catch (error) {
@@ -173,22 +194,19 @@ export const voteSong = async (partyId, playlistId, songId, userId) => {
  */
 export const markSongAsPlayed = async (partyId, playlistId, songId) => {
   try {
-    const songRef = db.collection('parties').doc(partyId)
-      .collection('playlists').doc(playlistId)
-      .collection('songs').doc(songId);
+    const songRef = doc(db, 'parties', partyId, 'playlists', playlistId, 'songs', songId);
     
-    await songRef.update({
+    await updateDoc(songRef, {
       played: true,
-      playedAt: firebase.firestore.FieldValue.serverTimestamp()
+      playedAt: serverTimestamp()
     });
     
     // Update current song in playlist
-    const playlistRef = db.collection('parties').doc(partyId)
-      .collection('playlists').doc(playlistId);
+    const playlistRef = doc(db, 'parties', partyId, 'playlists', playlistId);
     
-    await playlistRef.update({
+    await updateDoc(playlistRef, {
       currentSong: songId,
-      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      updatedAt: serverTimestamp()
     });
   } catch (error) {
     console.error('Error marking song as played:', error);
@@ -226,66 +244,48 @@ export const searchSongs = async (query) => {
       duration: 203,
       spotifyId: '39LLxExYz6ewLAcYrzQQyP'
     },
-    {
-      id: '3',
-      title: 'Stay',
-      artist: 'The Kid LAROI, Justin Bieber',
-      albumArt: 'https://i.scdn.co/image/ab67616d0000b273e85259a1cae0588a95d604d9',
-      duration: 141,
-      spotifyId: '5HCyWlXZPP0y6Gqq8TgA20'
-    },
-    {
-      id: '4',
-      title: 'good 4 u',
-      artist: 'Olivia Rodrigo',
-      albumArt: 'https://i.scdn.co/image/ab67616d0000b273a91c10fe9472d9bd89802e5a',
-      duration: 178,
-      spotifyId: '4ZtFanR9U6ndgddUvNcjcG'
-    },
-    {
-      id: '5',
-      title: 'Heat Waves',
-      artist: 'Glass Animals',
-      albumArt: 'https://i.scdn.co/image/ab67616d0000b2739e495fb707973f3390850eea',
-      duration: 238,
-      spotifyId: '02MWAaffLxlfxAUY7c5dvx'
-    }
-  ];
-  
-  // Filter based on query
-  return mockResults.filter(song => 
+    // Filter results based on query
+    // This is just a simple mock implementation
+    // In a real app, the filtering would be done by the API
+  ].filter(song => 
     song.title.toLowerCase().includes(query.toLowerCase()) || 
     song.artist.toLowerCase().includes(query.toLowerCase())
   );
+  
+  return mockResults;
 };
 
 /**
- * Get the currently playing song for a playlist
+ * Get the current song playing in a playlist
  * @param {string} partyId - The ID of the party
  * @param {string} playlistId - The ID of the playlist
- * @returns {Promise<Object|null>} - The currently playing song or null
+ * @returns {Promise<Object|null>} - The current song or null if no song is playing
  */
 export const getCurrentSong = async (partyId, playlistId) => {
   try {
-    const playlistRef = db.collection('parties').doc(partyId)
-      .collection('playlists').doc(playlistId);
+    const playlistRef = doc(db, 'parties', partyId, 'playlists', playlistId);
+    const playlistSnapshot = await getDoc(playlistRef);
     
-    const playlistDoc = await playlistRef.get();
+    if (!playlistSnapshot.exists()) {
+      throw new Error('Playlist not found');
+    }
     
-    if (!playlistDoc.exists || !playlistDoc.data().currentSong) {
+    const playlistData = playlistSnapshot.data();
+    
+    if (!playlistData.currentSong) {
       return null;
     }
     
-    const currentSongId = playlistDoc.data().currentSong;
-    const songDoc = await playlistRef.collection('songs').doc(currentSongId).get();
+    const songRef = doc(db, 'parties', partyId, 'playlists', playlistId, 'songs', playlistData.currentSong);
+    const songSnapshot = await getDoc(songRef);
     
-    if (!songDoc.exists) {
+    if (!songSnapshot.exists()) {
       return null;
     }
     
     return {
-      id: songDoc.id,
-      ...songDoc.data()
+      id: songSnapshot.id,
+      ...songSnapshot.data()
     };
   } catch (error) {
     console.error('Error getting current song:', error);

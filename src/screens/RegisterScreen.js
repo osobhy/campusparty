@@ -78,8 +78,16 @@ export default function RegisterScreen({ navigation }) {
   const [university, setUniversity] = useState('');
   const [loading, setLoading] = useState(false);
   const [emailError, setEmailError] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
   
-  const { register } = useAuth();
+  const { register, authError } = useAuth();
+
+  // Update local error message when authError changes
+  useEffect(() => {
+    if (authError) {
+      setErrorMessage(authError);
+    }
+  }, [authError]);
 
   // Extract university from email domain
   useEffect(() => {
@@ -113,26 +121,29 @@ export default function RegisterScreen({ navigation }) {
   }, [email]);
 
   const handleRegister = async () => {
+    // Clear previous errors
+    setErrorMessage('');
+    
     // Validate inputs
     if (!username || !email || !password) {
-      Alert.alert('Error', 'Please fill in all fields');
+      setErrorMessage('Please fill in all fields');
       return;
     }
 
     if (password.length < 6) {
-      Alert.alert('Error', 'Password must be at least 6 characters');
+      setErrorMessage('Password must be at least 6 characters');
       return;
     }
     
     // Validate email domain
     const emailParts = email.split('@');
     if (emailParts.length !== 2 || !emailParts[1].toLowerCase().endsWith('.edu')) {
-      Alert.alert('Error', 'Please use a valid .edu email address');
+      setErrorMessage('Please use a valid .edu email address');
       return;
     }
     
     if (!university) {
-      Alert.alert('Error', 'University could not be determined from your email');
+      setErrorMessage('University could not be determined from your email');
       return;
     }
 
@@ -151,19 +162,11 @@ export default function RegisterScreen({ navigation }) {
       console.error('Error code:', error.code);
       console.error('Error message:', error.message);
       
-      let errorMessage = 'Failed to create account. Please try again.';
-      
-      if (error.code === 'auth/email-already-in-use') {
-        errorMessage = 'Email is already in use';
-      } else if (error.code === 'auth/invalid-email') {
-        errorMessage = 'Invalid email address';
-      } else if (error.code === 'auth/weak-password') {
-        errorMessage = 'Password is too weak';
-      } else if (error.code === 'auth/network-request-failed') {
-        errorMessage = 'Network error. Please check your internet connection.';
+      // Error is already handled in AuthContext and set to authError
+      // If there's no authError set (which is unusual), set a generic message
+      if (!authError) {
+        setErrorMessage('Failed to create account. Please try again.');
       }
-      
-      Alert.alert('Error', `${errorMessage}\n\nDetails: ${error.message}`);
     } finally {
       setLoading(false);
     }
@@ -178,11 +181,20 @@ export default function RegisterScreen({ navigation }) {
         <View style={styles.form}>
           <Text style={styles.title}>Create Account</Text>
           
+          {errorMessage ? (
+            <View style={styles.errorContainer}>
+              <Text style={styles.errorText}>{errorMessage}</Text>
+            </View>
+          ) : null}
+          
           <TextInput
             style={styles.input}
             placeholder="Username"
             value={username}
-            onChangeText={setUsername}
+            onChangeText={(text) => {
+              setUsername(text);
+              setErrorMessage(''); // Clear error when user types
+            }}
           />
           
           <View>
@@ -190,13 +202,16 @@ export default function RegisterScreen({ navigation }) {
               style={[styles.input, emailError ? styles.inputError : null]}
               placeholder="College Email (.edu)"
               value={email}
-              onChangeText={setEmail}
+              onChangeText={(text) => {
+                setEmail(text);
+                setErrorMessage(''); // Clear error when user types
+              }}
               keyboardType="email-address"
               autoCapitalize="none"
               autoComplete="email"
             />
             {emailError ? (
-              <Text style={styles.errorText}>{emailError}</Text>
+              <Text style={styles.fieldErrorText}>{emailError}</Text>
             ) : null}
           </View>
           
@@ -204,7 +219,10 @@ export default function RegisterScreen({ navigation }) {
             style={styles.input}
             placeholder="Password"
             value={password}
-            onChangeText={setPassword}
+            onChangeText={(text) => {
+              setPassword(text);
+              setErrorMessage(''); // Clear error when user types
+            }}
             secureTextEntry
           />
           
@@ -267,28 +285,6 @@ const styles = StyleSheet.create({
   inputError: {
     borderColor: '#ef4444',
   },
-  errorText: {
-    color: '#ef4444',
-    marginTop: -10,
-    marginBottom: 10,
-    marginLeft: 5,
-  },
-  universityContainer: {
-    backgroundColor: '#f3f4f6',
-    padding: 15,
-    borderRadius: 10,
-    marginBottom: 20,
-  },
-  universityLabel: {
-    fontSize: 14,
-    color: '#6b7280',
-    marginBottom: 5,
-  },
-  universityText: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#111827',
-  },
   button: {
     backgroundColor: '#6366f1',
     padding: 15,
@@ -305,5 +301,40 @@ const styles = StyleSheet.create({
     color: '#4f46e5',
     textAlign: 'center',
     marginTop: 20,
+  },
+  universityContainer: {
+    backgroundColor: '#f3f4f6',
+    padding: 15,
+    borderRadius: 10,
+    marginBottom: 15,
+  },
+  universityLabel: {
+    fontSize: 14,
+    color: '#6b7280',
+    marginBottom: 5,
+  },
+  universityText: {
+    fontSize: 16,
+    color: '#111827',
+    fontWeight: '500',
+  },
+  errorContainer: {
+    backgroundColor: '#fee2e2',
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: '#fecaca',
+  },
+  errorText: {
+    color: '#b91c1c',
+    textAlign: 'center',
+  },
+  fieldErrorText: {
+    color: '#b91c1c',
+    fontSize: 12,
+    marginTop: -10,
+    marginBottom: 10,
+    marginLeft: 5,
   },
 });

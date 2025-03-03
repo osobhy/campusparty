@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, Alert, Modal } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../context/AuthContext';
 import { submitFeedback, getPartyFeedback, hasUserSubmittedFeedback, getFeedbackStats } from '../services/feedbackService';
 import { useTheme } from '@react-navigation/native';
 

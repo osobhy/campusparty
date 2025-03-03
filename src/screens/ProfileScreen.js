@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -13,11 +13,34 @@ import {
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';
 import { useParties } from '../hooks/useParties';
+import { useTheme } from '../context/ThemeContext';
 import PartyCard from '../components/PartyCard';
 import { Ionicons } from '@expo/vector-icons';
 
+// Default theme as fallback
+const defaultTheme = {
+  background: '#f8f9fa',
+  card: '#ffffff',
+  text: '#111827',
+  subtext: '#6b7280',
+  primary: '#6366f1',
+  secondary: '#a855f7',
+  accent: '#3b82f6',
+  border: '#e5e7eb',
+  error: '#ef4444',
+  success: '#10b981',
+  warning: '#f59e0b',
+  info: '#3b82f6',
+  notification: '#f59e0b'
+};
+
 export default function ProfileScreen({ navigation }) {
-  const { currentUser } = useAuth();
+  const { currentUser, userProfile } = useAuth();
+  const themeContext = useTheme();
+  
+  // Ensure we always have a valid theme object with all required properties
+  const theme = themeContext?.theme || defaultTheme;
+  
   const { 
     hostedParties, 
     joinedParties, 
@@ -30,13 +53,21 @@ export default function ProfileScreen({ navigation }) {
   
   const [activeTab, setActiveTab] = useState('hosted');
 
+  // Debug logging
+  useEffect(() => {
+    console.log('ProfileScreen - Current User:', currentUser);
+    console.log('ProfileScreen - User Profile:', userProfile);
+    console.log('ProfileScreen - Theme available:', !!themeContext);
+    console.log('ProfileScreen - Dark mode:', themeContext?.isDarkMode);
+  }, [currentUser, userProfile, themeContext]);
+
   // Add header when component mounts
   React.useLayoutEffect(() => {
     navigation.setOptions({
       headerShown: true,
       title: 'My Profile',
       headerStyle: {
-        backgroundColor: '#6366f1',
+        backgroundColor: theme.primary || '#6366f1',
       },
       headerTintColor: '#fff',
       headerTitleStyle: {
@@ -51,7 +82,7 @@ export default function ProfileScreen({ navigation }) {
         </TouchableOpacity>
       ),
     });
-  }, [navigation]);
+  }, [navigation, theme]);
 
   const handlePartyAction = async (partyId) => {
     if (!currentUser) return;
@@ -84,13 +115,13 @@ export default function ProfileScreen({ navigation }) {
 
   if (!currentUser) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={[styles.container, { backgroundColor: theme.background || '#f8f9fa' }]}>
         <View style={styles.notLoggedInContainer}>
-          <Text style={styles.notLoggedInText}>
+          <Text style={[styles.notLoggedInText, { color: theme.subtext || '#6b7280' }]}>
             Please log in to view your profile
           </Text>
           <TouchableOpacity
-            style={styles.loginButton}
+            style={[styles.loginButton, { backgroundColor: theme.primary || '#6366f1' }]}
             onPress={() => navigation.navigate('Login')}
           >
             <Text style={styles.buttonText}>Login</Text>
@@ -101,34 +132,60 @@ export default function ProfileScreen({ navigation }) {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.profileHeader}>
-        <View style={styles.avatarContainer}>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.background || '#f8f9fa' }]}>
+      <View style={[styles.profileHeader, { backgroundColor: theme.card || '#ffffff', borderBottomColor: theme.border || '#e5e7eb' }]}>
+        <View style={[styles.avatarContainer, { backgroundColor: theme.primary || '#6366f1' }]}>
           <Text style={styles.avatarText}>
             {currentUser.displayName ? currentUser.displayName.charAt(0).toUpperCase() : '?'}
           </Text>
         </View>
         <View style={styles.profileInfo}>
-          <Text style={styles.username}>{currentUser.displayName}</Text>
-          <Text style={styles.email}>{currentUser.email}</Text>
-          <Text style={styles.university}>{currentUser.university || 'University not set'}</Text>
+          <Text style={[styles.username, { color: theme.text || '#111827' }]}>
+            {currentUser.displayName}
+          </Text>
+          <Text style={[styles.email, { color: theme.subtext || '#6b7280' }]}>
+            {currentUser.email}
+          </Text>
+          <Text style={[styles.university, { color: theme.subtext || '#6b7280' }]}>
+            {userProfile?.university || 'University not set'}
+          </Text>
+          {!userProfile?.university && (
+            <TouchableOpacity 
+              style={[styles.updateButton, { backgroundColor: theme.primary || '#6366f1' }]}
+              onPress={() => navigation.navigate('Settings')}
+            >
+              <Text style={styles.updateButtonText}>Update Profile</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 
-      <View style={styles.tabContainer}>
+      <View style={[styles.tabContainer, { backgroundColor: theme.card || '#ffffff', borderBottomColor: theme.border || '#e5e7eb' }]}>
         <TouchableOpacity
-          style={[styles.tab, activeTab === 'hosted' && styles.activeTab]}
+          style={[styles.tab, activeTab === 'hosted' && [styles.activeTab, { borderBottomColor: theme.primary || '#6366f1' }]]}
           onPress={() => setActiveTab('hosted')}
         >
-          <Text style={[styles.tabText, activeTab === 'hosted' && styles.activeTabText]}>
+          <Text 
+            style={[
+              styles.tabText, 
+              { color: theme.subtext || '#6b7280' },
+              activeTab === 'hosted' && [styles.activeTabText, { color: theme.primary || '#6366f1' }]
+            ]}
+          >
             Hosted Parties
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.tab, activeTab === 'joined' && styles.activeTab]}
+          style={[styles.tab, activeTab === 'joined' && [styles.activeTab, { borderBottomColor: theme.primary || '#6366f1' }]]}
           onPress={() => setActiveTab('joined')}
         >
-          <Text style={[styles.tabText, activeTab === 'joined' && styles.activeTabText]}>
+          <Text 
+            style={[
+              styles.tabText, 
+              { color: theme.subtext || '#6b7280' },
+              activeTab === 'joined' && [styles.activeTabText, { color: theme.primary || '#6366f1' }]
+            ]}
+          >
             Joined Parties
           </Text>
         </TouchableOpacity>
@@ -136,14 +193,19 @@ export default function ProfileScreen({ navigation }) {
 
       {loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#6366f1" />
-          <Text style={styles.loadingText}>Loading parties...</Text>
+          <ActivityIndicator size="large" color={theme.primary || '#6366f1'} />
+          <Text style={[styles.loadingText, { color: theme.subtext || '#6b7280' }]}>Loading parties...</Text>
         </View>
       ) : (
         <ScrollView 
           style={styles.partyList}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+            <RefreshControl 
+              refreshing={refreshing} 
+              onRefresh={onRefresh} 
+              colors={[theme.primary || '#6366f1']}
+              tintColor={theme.primary || '#6366f1'}
+            />
           }
         >
           {activeTab === 'hosted' ? (
@@ -159,7 +221,9 @@ export default function ProfileScreen({ navigation }) {
                 />
               ))
             ) : (
-              <Text style={styles.noParties}>You haven't hosted any parties yet</Text>
+              <Text style={[styles.noParties, { color: theme.subtext || '#6b7280' }]}>
+                You haven't hosted any parties yet
+              </Text>
             )
           ) : (
             joinedParties.length > 0 ? (
@@ -174,7 +238,9 @@ export default function ProfileScreen({ navigation }) {
                 />
               ))
             ) : (
-              <Text style={styles.noParties}>You haven't joined any parties yet</Text>
+              <Text style={[styles.noParties, { color: theme.subtext || '#6b7280' }]}>
+                You haven't joined any parties yet
+              </Text>
             )
           )}
         </ScrollView>
@@ -186,7 +252,6 @@ export default function ProfileScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
   },
   notLoggedInContainer: {
     flex: 1,
@@ -196,12 +261,10 @@ const styles = StyleSheet.create({
   },
   notLoggedInText: {
     fontSize: 18,
-    color: '#666',
     marginBottom: 20,
     textAlign: 'center',
   },
   loginButton: {
-    backgroundColor: '#3b82f6',
     padding: 15,
     borderRadius: 25,
     alignItems: 'center',
@@ -215,15 +278,12 @@ const styles = StyleSheet.create({
   profileHeader: {
     flexDirection: 'row',
     padding: 20,
-    backgroundColor: 'white',
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
   },
   avatarContainer: {
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: '#6366f1',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 15,
@@ -240,22 +300,31 @@ const styles = StyleSheet.create({
   username: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#111827',
     marginBottom: 4,
   },
   email: {
     fontSize: 14,
-    color: '#4b5563',
     marginBottom: 4,
   },
   university: {
     fontSize: 14,
-    color: '#6b7280',
+    marginBottom: 8,
+  },
+  updateButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 15,
+    alignSelf: 'flex-start',
+  },
+  updateButtonText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '500',
   },
   tabContainer: {
     flexDirection: 'row',
+    marginBottom: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
   },
   tab: {
     flex: 1,
@@ -264,24 +333,16 @@ const styles = StyleSheet.create({
   },
   activeTab: {
     borderBottomWidth: 2,
-    borderBottomColor: '#6366f1',
   },
   tabText: {
     fontSize: 16,
-    color: '#6b7280',
   },
   activeTabText: {
-    color: '#6366f1',
     fontWeight: 'bold',
   },
   partyList: {
-    padding: 15,
-  },
-  noParties: {
-    textAlign: 'center',
-    fontSize: 16,
-    color: '#666',
-    marginTop: 20,
+    flex: 1,
+    padding: 10,
   },
   loadingContainer: {
     flex: 1,
@@ -290,7 +351,10 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     marginTop: 10,
+  },
+  noParties: {
+    textAlign: 'center',
+    marginTop: 40,
     fontSize: 16,
-    color: '#666',
   },
 }); 

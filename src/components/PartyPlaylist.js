@@ -22,12 +22,33 @@ import {
   searchSongs,
   getCurrentSong
 } from '../services/playlistService';
-import { useAuth } from '../contexts/AuthContext';
-import { useTheme } from '../contexts/ThemeContext';
+import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
+
+// Default theme as fallback
+const defaultTheme = {
+  background: '#f8f9fa',
+  card: '#ffffff',
+  text: '#111827',
+  subtext: '#6b7280',
+  primary: '#6366f1',
+  secondary: '#a855f7',
+  accent: '#3b82f6',
+  border: '#e5e7eb',
+  error: '#ef4444',
+  success: '#10b981',
+  warning: '#f59e0b',
+  info: '#3b82f6',
+  notification: '#f59e0b'
+};
 
 const PartyPlaylist = ({ partyId, isHost }) => {
-  const { user } = useAuth();
-  const { colors, isDark } = useTheme();
+  const { currentUser } = useAuth();
+  const themeContext = useTheme();
+  
+  // Ensure we always have a valid theme object with all required properties
+  const theme = themeContext?.theme || defaultTheme;
+  
   const [playlists, setPlaylists] = useState([]);
   const [selectedPlaylist, setSelectedPlaylist] = useState(null);
   const [songs, setSongs] = useState([]);
@@ -40,10 +61,13 @@ const PartyPlaylist = ({ partyId, isHost }) => {
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [newPlaylistDescription, setNewPlaylistDescription] = useState('');
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   // Load playlists when component mounts
   useEffect(() => {
-    loadPlaylists();
+    if (partyId) {
+      loadPlaylists();
+    }
   }, [partyId]);
 
   // Load songs when a playlist is selected
@@ -57,6 +81,7 @@ const PartyPlaylist = ({ partyId, isHost }) => {
   const loadPlaylists = async () => {
     try {
       setLoading(true);
+      setError(null);
       const fetchedPlaylists = await getPartyPlaylists(partyId);
       setPlaylists(fetchedPlaylists);
       
@@ -64,12 +89,12 @@ const PartyPlaylist = ({ partyId, isHost }) => {
       if (fetchedPlaylists.length > 0 && !selectedPlaylist) {
         setSelectedPlaylist(fetchedPlaylists[0]);
       }
-      
-      setLoading(false);
     } catch (error) {
       console.error('Error loading playlists:', error);
-      setLoading(false);
+      setError('Failed to load playlists');
       Alert.alert('Error', 'Failed to load playlists');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -78,13 +103,15 @@ const PartyPlaylist = ({ partyId, isHost }) => {
     
     try {
       setLoading(true);
+      setError(null);
       const fetchedSongs = await getPlaylistSongs(partyId, selectedPlaylist.id);
       setSongs(fetchedSongs);
-      setLoading(false);
     } catch (error) {
       console.error('Error loading songs:', error);
-      setLoading(false);
+      setError('Failed to load songs');
       Alert.alert('Error', 'Failed to load songs');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -113,7 +140,7 @@ const PartyPlaylist = ({ partyId, isHost }) => {
         minVotes: 1
       };
       
-      await createPlaylist(partyId, user.uid, playlistInfo);
+      await createPlaylist(partyId, currentUser.uid, playlistInfo);
       setNewPlaylistName('');
       setNewPlaylistDescription('');
       setShowCreateModal(false);
@@ -137,17 +164,17 @@ const PartyPlaylist = ({ partyId, isHost }) => {
       setIsSearching(true);
       const results = await searchSongs(query);
       setSearchResults(results);
-      setIsSearching(false);
     } catch (error) {
       console.error('Error searching songs:', error);
-      setIsSearching(false);
       Alert.alert('Error', 'Failed to search songs');
+    } finally {
+      setIsSearching(false);
     }
   };
 
   const handleAddSong = async (song) => {
     try {
-      await addSongToPlaylist(partyId, selectedPlaylist.id, user.uid, song);
+      await addSongToPlaylist(partyId, selectedPlaylist.id, currentUser.uid, song);
       setShowAddSongModal(false);
       loadSongs();
       Alert.alert('Success', 'Song added to playlist');
@@ -159,7 +186,7 @@ const PartyPlaylist = ({ partyId, isHost }) => {
 
   const handleVoteSong = async (songId) => {
     try {
-      await voteSong(partyId, selectedPlaylist.id, songId, user.uid);
+      await voteSong(partyId, selectedPlaylist.id, songId, currentUser.uid);
       loadSongs();
     } catch (error) {
       console.error('Error voting for song:', error);
@@ -187,13 +214,13 @@ const PartyPlaylist = ({ partyId, isHost }) => {
     <TouchableOpacity
       style={[
         styles.playlistItem,
-        selectedPlaylist?.id === item.id && { backgroundColor: colors.primary + '40' }
+        selectedPlaylist?.id === item.id && { backgroundColor: (theme.primary || '#6366f1') + '40' }
       ]}
       onPress={() => setSelectedPlaylist(item)}
     >
-      <Text style={[styles.playlistName, { color: colors.text }]}>{item.name}</Text>
+      <Text style={[styles.playlistName, { color: theme.text || '#111827' }]}>{item.name}</Text>
       {item.description ? (
-        <Text style={[styles.playlistDescription, { color: colors.text + '80' }]}>
+        <Text style={[styles.playlistDescription, { color: (theme.text || '#111827') + '80' }]}>
           {item.description}
         </Text>
       ) : null}
@@ -201,10 +228,10 @@ const PartyPlaylist = ({ partyId, isHost }) => {
   );
 
   const renderSongItem = ({ item }) => {
-    const hasVoted = item.voters?.includes(user.uid);
+    const hasVoted = item.voters?.includes(currentUser.uid);
     
     return (
-      <View style={[styles.songItem, { backgroundColor: colors.card }]}>
+      <View style={[styles.songItem, { backgroundColor: theme.card || '#ffffff' }]}>
         <TouchableOpacity
           style={styles.voteButton}
           onPress={() => handleVoteSong(item.id)}
@@ -212,29 +239,29 @@ const PartyPlaylist = ({ partyId, isHost }) => {
           <Ionicons
             name={hasVoted ? "heart" : "heart-outline"}
             size={24}
-            color={hasVoted ? colors.primary : colors.text}
+            color={hasVoted ? (theme.primary || '#6366f1') : (theme.text || '#111827')}
           />
-          <Text style={[styles.voteCount, { color: colors.text }]}>{item.votes}</Text>
+          <Text style={[styles.voteCount, { color: theme.text || '#111827' }]}>{item.votes}</Text>
         </TouchableOpacity>
         
         <View style={styles.songInfo}>
           {item.albumArt ? (
             <Image source={{ uri: item.albumArt }} style={styles.albumArt} />
           ) : (
-            <View style={[styles.albumArtPlaceholder, { backgroundColor: colors.border }]}>
-              <Ionicons name="musical-note" size={24} color={colors.text} />
+            <View style={[styles.albumArtPlaceholder, { backgroundColor: theme.border || '#e5e7eb' }]}>
+              <Ionicons name="musical-note" size={24} color={theme.text || '#111827'} />
             </View>
           )}
           
           <View style={styles.songDetails}>
-            <Text style={[styles.songTitle, { color: colors.text }]}>{item.title}</Text>
-            <Text style={[styles.songArtist, { color: colors.text + '80' }]}>{item.artist}</Text>
+            <Text style={[styles.songTitle, { color: theme.text || '#111827' }]}>{item.title}</Text>
+            <Text style={[styles.songArtist, { color: (theme.text || '#111827') + '80' }]}>{item.artist}</Text>
           </View>
         </View>
         
         {isHost && (
           <TouchableOpacity
-            style={[styles.playButton, { backgroundColor: colors.primary }]}
+            style={[styles.playButton, { backgroundColor: theme.primary || '#6366f1' }]}
             onPress={() => handlePlaySong(item.id)}
           >
             <Ionicons name="play" size={20} color="white" />
@@ -246,23 +273,23 @@ const PartyPlaylist = ({ partyId, isHost }) => {
 
   const renderSearchResultItem = ({ item }) => (
     <TouchableOpacity
-      style={[styles.searchResultItem, { backgroundColor: colors.card }]}
+      style={[styles.searchResultItem, { backgroundColor: theme.card || '#ffffff' }]}
       onPress={() => handleAddSong(item)}
     >
       {item.albumArt ? (
         <Image source={{ uri: item.albumArt }} style={styles.resultAlbumArt} />
       ) : (
-        <View style={[styles.resultAlbumArtPlaceholder, { backgroundColor: colors.border }]}>
-          <Ionicons name="musical-note" size={20} color={colors.text} />
+        <View style={[styles.resultAlbumArtPlaceholder, { backgroundColor: theme.border || '#e5e7eb' }]}>
+          <Ionicons name="musical-note" size={20} color={theme.text || '#111827'} />
         </View>
       )}
       
       <View style={styles.resultDetails}>
-        <Text style={[styles.resultTitle, { color: colors.text }]}>{item.title}</Text>
-        <Text style={[styles.resultArtist, { color: colors.text + '80' }]}>{item.artist}</Text>
+        <Text style={[styles.resultTitle, { color: theme.text || '#111827' }]}>{item.title}</Text>
+        <Text style={[styles.resultArtist, { color: (theme.text || '#111827') + '80' }]}>{item.artist}</Text>
       </View>
       
-      <Ionicons name="add-circle" size={24} color={colors.primary} />
+      <Ionicons name="add-circle" size={24} color={theme.primary || '#6366f1'} />
     </TouchableOpacity>
   );
 
@@ -270,23 +297,23 @@ const PartyPlaylist = ({ partyId, isHost }) => {
     if (!currentSong) return null;
     
     return (
-      <View style={[styles.currentSongContainer, { backgroundColor: colors.primary + '20' }]}>
-        <Text style={[styles.nowPlayingText, { color: colors.primary }]}>Now Playing</Text>
+      <View style={[styles.currentSongContainer, { backgroundColor: (theme.primary || '#6366f1') + '20' }]}>
+        <Text style={[styles.nowPlayingText, { color: theme.primary || '#6366f1' }]}>Now Playing</Text>
         
         <View style={styles.currentSongContent}>
           {currentSong.albumArt ? (
             <Image source={{ uri: currentSong.albumArt }} style={styles.currentAlbumArt} />
           ) : (
-            <View style={[styles.currentAlbumArtPlaceholder, { backgroundColor: colors.border }]}>
-              <Ionicons name="musical-note" size={32} color={colors.text} />
+            <View style={[styles.currentAlbumArtPlaceholder, { backgroundColor: theme.border || '#e5e7eb' }]}>
+              <Ionicons name="musical-note" size={32} color={theme.text || '#111827'} />
             </View>
           )}
           
           <View style={styles.currentSongDetails}>
-            <Text style={[styles.currentSongTitle, { color: colors.text }]}>
+            <Text style={[styles.currentSongTitle, { color: theme.text || '#111827' }]}>
               {currentSong.title}
             </Text>
-            <Text style={[styles.currentSongArtist, { color: colors.text + '80' }]}>
+            <Text style={[styles.currentSongArtist, { color: (theme.text || '#111827') + '80' }]}>
               {currentSong.artist}
             </Text>
           </View>
@@ -295,13 +322,26 @@ const PartyPlaylist = ({ partyId, isHost }) => {
     );
   };
 
+  if (error && !currentUser) {
+    return (
+      <View style={[styles.container, { backgroundColor: theme.card || '#ffffff' }]}>
+        <Text style={[styles.title, { color: theme.text || '#111827' }]}>Party Playlists</Text>
+        <View style={styles.errorContainer}>
+          <Text style={[styles.errorText, { color: theme.error || '#ef4444' }]}>
+            Please log in to use playlist features
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <View style={[styles.container, { backgroundColor: theme.background || '#f8f9fa' }]}>
       <View style={styles.header}>
-        <Text style={[styles.title, { color: colors.text }]}>Party Playlists</Text>
+        <Text style={[styles.title, { color: theme.text || '#111827' }]}>Party Playlists</Text>
         
         <TouchableOpacity
-          style={[styles.createButton, { backgroundColor: colors.primary }]}
+          style={[styles.createButton, { backgroundColor: theme.primary || '#6366f1' }]}
           onPress={() => setShowCreateModal(true)}
         >
           <Text style={styles.createButtonText}>Create Playlist</Text>
@@ -320,7 +360,7 @@ const PartyPlaylist = ({ partyId, isHost }) => {
             contentContainerStyle={styles.playlistsList}
           />
         ) : (
-          <Text style={[styles.emptyText, { color: colors.text + '80' }]}>
+          <Text style={[styles.emptyText, { color: (theme.text || '#111827') + '80' }]}>
             No playlists yet. Create one to get started!
           </Text>
         )}
@@ -333,12 +373,12 @@ const PartyPlaylist = ({ partyId, isHost }) => {
       {selectedPlaylist ? (
         <View style={styles.songsContainer}>
           <View style={styles.songsHeader}>
-            <Text style={[styles.songsTitle, { color: colors.text }]}>
+            <Text style={[styles.songsTitle, { color: theme.text || '#111827' }]}>
               {selectedPlaylist.name} - Songs
             </Text>
             
             <TouchableOpacity
-              style={[styles.addSongButton, { backgroundColor: colors.secondary }]}
+              style={[styles.addSongButton, { backgroundColor: theme.secondary || '#a855f7' }]}
               onPress={() => setShowAddSongModal(true)}
             >
               <Text style={styles.addSongButtonText}>Add Song</Text>
@@ -346,7 +386,7 @@ const PartyPlaylist = ({ partyId, isHost }) => {
           </View>
           
           {loading ? (
-            <ActivityIndicator size="large" color={colors.primary} style={styles.loader} />
+            <ActivityIndicator size="large" color={theme.primary || '#6366f1'} style={styles.loader} />
           ) : songs.length > 0 ? (
             <FlatList
               data={songs}
@@ -355,7 +395,7 @@ const PartyPlaylist = ({ partyId, isHost }) => {
               contentContainerStyle={styles.songsList}
             />
           ) : (
-            <Text style={[styles.emptyText, { color: colors.text + '80' }]}>
+            <Text style={[styles.emptyText, { color: (theme.text || '#111827') + '80' }]}>
               No songs in this playlist yet. Add some!
             </Text>
           )}
@@ -370,21 +410,21 @@ const PartyPlaylist = ({ partyId, isHost }) => {
         onRequestClose={() => setShowCreateModal(false)}
       >
         <View style={styles.modalContainer}>
-          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
-            <Text style={[styles.modalTitle, { color: colors.text }]}>Create New Playlist</Text>
+          <View style={[styles.modalContent, { backgroundColor: theme.card || '#ffffff' }]}>
+            <Text style={[styles.modalTitle, { color: theme.text || '#111827' }]}>Create New Playlist</Text>
             
             <TextInput
-              style={[styles.input, { backgroundColor: colors.background, color: colors.text }]}
+              style={[styles.input, { backgroundColor: theme.background || '#f8f9fa', color: theme.text || '#111827' }]}
               placeholder="Playlist Name"
-              placeholderTextColor={colors.text + '80'}
+              placeholderTextColor={(theme.text || '#111827') + '80'}
               value={newPlaylistName}
               onChangeText={setNewPlaylistName}
             />
             
             <TextInput
-              style={[styles.input, { backgroundColor: colors.background, color: colors.text }]}
+              style={[styles.input, { backgroundColor: theme.background || '#f8f9fa', color: theme.text || '#111827' }]}
               placeholder="Description (optional)"
-              placeholderTextColor={colors.text + '80'}
+              placeholderTextColor={(theme.text || '#111827') + '80'}
               value={newPlaylistDescription}
               onChangeText={setNewPlaylistDescription}
               multiline
@@ -392,14 +432,14 @@ const PartyPlaylist = ({ partyId, isHost }) => {
             
             <View style={styles.modalButtons}>
               <TouchableOpacity
-                style={[styles.modalButton, { backgroundColor: colors.error }]}
+                style={[styles.modalButton, { backgroundColor: theme.error || '#ef4444' }]}
                 onPress={() => setShowCreateModal(false)}
               >
                 <Text style={styles.modalButtonText}>Cancel</Text>
               </TouchableOpacity>
               
               <TouchableOpacity
-                style={[styles.modalButton, { backgroundColor: colors.primary }]}
+                style={[styles.modalButton, { backgroundColor: theme.primary || '#6366f1' }]}
                 onPress={handleCreatePlaylist}
               >
                 <Text style={styles.modalButtonText}>Create</Text>
@@ -417,38 +457,38 @@ const PartyPlaylist = ({ partyId, isHost }) => {
         onRequestClose={() => setShowAddSongModal(false)}
       >
         <View style={styles.modalContainer}>
-          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
-            <Text style={[styles.modalTitle, { color: colors.text }]}>Add Song to Playlist</Text>
+          <View style={[styles.modalContent, { backgroundColor: theme.card || '#ffffff' }]}>
+            <Text style={[styles.modalTitle, { color: theme.text || '#111827' }]}>Add Song</Text>
             
             <TextInput
-              style={[styles.input, { backgroundColor: colors.background, color: colors.text }]}
+              style={[styles.input, { backgroundColor: theme.background || '#f8f9fa', color: theme.text || '#111827' }]}
               placeholder="Search for songs..."
-              placeholderTextColor={colors.text + '80'}
+              placeholderTextColor={(theme.text || '#111827') + '80'}
               value={searchQuery}
               onChangeText={handleSearchSongs}
               autoFocus
             />
             
             {isSearching ? (
-              <ActivityIndicator size="small" color={colors.primary} style={styles.searchLoader} />
+              <ActivityIndicator size="large" color={theme.primary || '#6366f1'} style={styles.searchLoader} />
             ) : searchResults.length > 0 ? (
               <FlatList
                 data={searchResults}
                 renderItem={renderSearchResultItem}
-                keyExtractor={(item) => item.id}
+                keyExtractor={(item, index) => `${item.id}-${index}`}
                 style={styles.searchResults}
               />
-            ) : searchQuery.trim() ? (
-              <Text style={[styles.emptyText, { color: colors.text + '80' }]}>
-                No results found
+            ) : searchQuery ? (
+              <Text style={[styles.emptyText, { color: (theme.text || '#111827') + '80' }]}>
+                No results found. Try a different search term.
               </Text>
             ) : null}
             
             <TouchableOpacity
-              style={[styles.closeButton, { backgroundColor: colors.error }]}
+              style={[styles.closeButton, { backgroundColor: theme.error || '#ef4444' }]}
               onPress={() => setShowAddSongModal(false)}
             >
-              <Text style={styles.modalButtonText}>Close</Text>
+              <Text style={styles.closeButtonText}>Close</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -459,9 +499,13 @@ const PartyPlaylist = ({ partyId, isHost }) => {
 
 const styles = StyleSheet.create({
   container: {
+    borderRadius: 12,
     padding: 16,
-    borderRadius: 8,
-    marginVertical: 8,
+    marginBottom: 16,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   header: {
     flexDirection: 'row',
@@ -481,6 +525,7 @@ const styles = StyleSheet.create({
   createButtonText: {
     color: 'white',
     fontWeight: '600',
+    fontSize: 14,
   },
   playlistsContainer: {
     marginBottom: 16,
@@ -503,8 +548,8 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   currentSongContainer: {
-    padding: 16,
     borderRadius: 8,
+    padding: 12,
     marginBottom: 16,
   },
   nowPlayingText: {
@@ -534,7 +579,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   currentSongTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '600',
     marginBottom: 4,
   },
@@ -556,12 +601,13 @@ const styles = StyleSheet.create({
   },
   addSongButton: {
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
+    paddingVertical: 6,
+    borderRadius: 16,
   },
   addSongButtonText: {
     color: 'white',
     fontWeight: '600',
+    fontSize: 12,
   },
   songsList: {
     paddingBottom: 16,
@@ -588,14 +634,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   albumArt: {
-    width: 50,
-    height: 50,
+    width: 48,
+    height: 48,
     borderRadius: 4,
     marginRight: 12,
   },
   albumArtPlaceholder: {
-    width: 50,
-    height: 50,
+    width: 48,
+    height: 48,
     borderRadius: 4,
     marginRight: 12,
     justifyContent: 'center',
@@ -606,7 +652,7 @@ const styles = StyleSheet.create({
   },
   songTitle: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '500',
     marginBottom: 4,
   },
   songArtist: {
@@ -619,6 +665,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  emptyText: {
+    textAlign: 'center',
+    padding: 16,
+    fontSize: 16,
+  },
   modalContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -627,9 +678,13 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     width: '90%',
-    padding: 20,
-    borderRadius: 12,
     maxHeight: '80%',
+    borderRadius: 12,
+    padding: 20,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
   },
   modalTitle: {
     fontSize: 20,
@@ -638,34 +693,30 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   input: {
-    padding: 12,
     borderRadius: 8,
-    marginBottom: 12,
+    padding: 12,
+    marginBottom: 16,
+    fontSize: 16,
   },
   modalButtons: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 16,
   },
   modalButton: {
     flex: 1,
     padding: 12,
     borderRadius: 8,
+    marginHorizontal: 8,
     alignItems: 'center',
-    marginHorizontal: 6,
   },
   modalButtonText: {
     color: 'white',
     fontWeight: '600',
-  },
-  closeButton: {
-    padding: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 16,
+    fontSize: 16,
   },
   searchResults: {
     maxHeight: 300,
+    marginBottom: 16,
   },
   searchResultItem: {
     flexDirection: 'row',
@@ -692,22 +743,36 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   resultTitle: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 16,
+    fontWeight: '500',
     marginBottom: 2,
   },
   resultArtist: {
-    fontSize: 12,
+    fontSize: 14,
   },
-  emptyText: {
-    textAlign: 'center',
-    padding: 16,
+  closeButton: {
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  closeButtonText: {
+    color: 'white',
+    fontWeight: '600',
+    fontSize: 16,
   },
   loader: {
-    marginTop: 20,
+    marginVertical: 20,
   },
   searchLoader: {
     marginVertical: 20,
+  },
+  errorContainer: {
+    padding: 16,
+    alignItems: 'center',
+  },
+  errorText: {
+    fontSize: 16,
+    textAlign: 'center',
   },
 });
 
