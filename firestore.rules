@@ -7,12 +7,58 @@ service cloud.firestore {
       allow read: if true;
       allow create: if request.auth != null;
       allow update: if request.auth != null && 
-                     (request.auth.uid == resource.data.host || 
+                     (request.auth.uid == resource.data.host.id || 
                       request.resource.data.attendees.hasOnly(resource.data.attendees) ||
                       resource.data.attendees.hasOnly(request.resource.data.attendees) ||
                       request.resource.data.paidAttendees.hasOnly(resource.data.paidAttendees) ||
                       resource.data.paidAttendees.hasOnly(request.resource.data.paidAttendees));
-      allow delete: if request.auth != null && request.auth.uid == resource.data.host;
+      allow delete: if request.auth != null && request.auth.uid == resource.data.host.id;
+      
+      // Party feedback
+      match /feedback/{feedbackId} {
+        allow read: if true;
+        allow create: if request.auth != null && 
+                       (request.resource.data.userId == request.auth.uid);
+        allow update: if request.auth != null && 
+                       (resource.data.userId == request.auth.uid || 
+                        getParty(partyId).data.host.id == request.auth.uid);
+        allow delete: if request.auth != null && 
+                       (resource.data.userId == request.auth.uid || 
+                        getParty(partyId).data.host.id == request.auth.uid);
+      }
+      
+      // Party expenses
+      match /expenses/{expenseId} {
+        allow read: if request.auth != null && 
+                     (isPartyMember(partyId, request.auth.uid) || 
+                      getParty(partyId).data.host.id == request.auth.uid);
+        allow create: if request.auth != null && 
+                       (isPartyMember(partyId, request.auth.uid) || 
+                        getParty(partyId).data.host.id == request.auth.uid);
+        allow update: if request.auth != null && 
+                       (resource.data.paidBy == request.auth.uid || 
+                        getParty(partyId).data.host.id == request.auth.uid ||
+                        request.resource.data.settledBy.hasOnly(resource.data.settledBy) ||
+                        resource.data.settledBy.hasOnly(request.resource.data.settledBy));
+        allow delete: if request.auth != null && 
+                       (resource.data.paidBy == request.auth.uid || 
+                        getParty(partyId).data.host.id == request.auth.uid);
+      }
+      
+      // Party games
+      match /games/{gameId} {
+        allow read: if request.auth != null && 
+                     (isPartyMember(partyId, request.auth.uid) || 
+                      getParty(partyId).data.host.id == request.auth.uid);
+        allow create: if request.auth != null && 
+                       getParty(partyId).data.host.id == request.auth.uid;
+        allow update: if request.auth != null && 
+                       (getParty(partyId).data.host.id == request.auth.uid ||
+                        request.resource.data.participants.hasOnly(resource.data.participants) ||
+                        resource.data.participants.hasOnly(request.resource.data.participants));
+        allow delete: if request.auth != null && 
+                       getParty(partyId).data.host.id == request.auth.uid;
+      }
     }
     
     // User profiles
@@ -27,17 +73,33 @@ service cloud.firestore {
     match /payments/{paymentId} {
       allow read: if request.auth != null && 
                    (request.auth.uid == resource.data.userId || 
-                    getParty(resource.data.partyId).data.host == request.auth.uid);
+                    getParty(resource.data.partyId).data.host.id == request.auth.uid);
       allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
       allow update: if request.auth != null && 
                      (request.auth.uid == resource.data.userId || 
-                      getParty(resource.data.partyId).data.host == request.auth.uid);
+                      getParty(resource.data.partyId).data.host.id == request.auth.uid);
       allow delete: if false; // Don't allow deletion of payment records
+    }
+    
+    // Games collection
+    match /games/{gameId} {
+      allow read: if true;
+      allow create: if request.auth != null;
+      allow update: if request.auth != null && 
+                     (request.auth.uid == resource.data.creatorId || 
+                      request.resource.data.popularity != resource.data.popularity);
+      allow delete: if request.auth != null && request.auth.uid == resource.data.creatorId;
     }
     
     // Helper function to get a party document
     function getParty(partyId) {
       return get(/databases/$(database)/documents/parties/$(partyId));
+    }
+    
+    // Helper function to check if a user is a member of a party
+    function isPartyMember(partyId, userId) {
+      let party = getParty(partyId).data;
+      return userId in party.attendees;
     }
   }
 } 

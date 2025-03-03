@@ -12,6 +12,11 @@ A mobile application for hosting and joining campus parties.
 - **QR Code Sharing**: Share party details via QR codes
 - **Notifications**: Receive notifications about party updates
 - **Payment Integration**: Require Venmo payments for party entry
+- **Safety Features**: Designated Driver finder and drink counter
+- **Collaborative Playlists**: Create and contribute to party playlists
+- **Expense Splitting**: Track and split party expenses with attendees
+- **Anonymous Feedback**: Rate and review parties anonymously
+- **Campus Games**: Play university-specific party games
 
 ## Tech Stack
 
@@ -59,6 +64,7 @@ npm start
    - `users`: Store user information
    - `parties`: Store party details
    - `payments`: Store payment records
+   - `games`: Store party games
 5. Deploy Firestore security rules and indexes:
 
    ```bash
@@ -101,6 +107,64 @@ The app includes a Venmo payment integration for party hosts to charge entry fee
    - Payments are tracked in the Firestore database
    - Party hosts can see who has paid
    - Attendees can see their payment status
+
+## Safety Features
+
+The app includes safety features to promote responsible partying:
+
+1. **Designated Driver Finder**:
+   - Volunteer as a designated driver for a party
+   - See a list of available designated drivers
+   - Request a ride from a designated driver
+   - View contact information for campus shuttles and rideshare services
+
+2. **Drink Counter**:
+   - Track your alcohol consumption during a party
+   - Get an estimated BAC based on your drinks, weight, and time
+   - Receive alerts when you should stop drinking
+   - Get reminders to drink water and pace yourself
+
+## Expense Splitting
+
+Split costs for party supplies and expenses:
+
+1. **Add Expenses**:
+   - Add expenses with title, amount, and who paid
+   - Automatically split costs among party attendees
+   - Track who has settled up and who still owes money
+
+2. **Settle Up**:
+   - See a list of expenses you need to settle
+   - Mark expenses as settled after paying your share
+   - Get a summary of all expenses for a party
+
+## Party Feedback
+
+Anonymous ratings and feedback for parties:
+
+1. **For Attendees**:
+   - Rate parties from 1-5 stars
+   - Leave anonymous comments and feedback
+   - See overall ratings and reviews for parties
+
+2. **For Hosts**:
+   - View feedback for your parties
+   - See rating statistics and trends
+   - Use feedback to improve future parties
+
+## Campus-Specific Party Games
+
+Play and create games tailored to your campus:
+
+1. **Browse Games**:
+   - Find games specific to your university
+   - See popular games across all campuses
+   - Join games that other attendees are playing
+
+2. **Create Games**:
+   - Create custom games for your university
+   - Add rules, descriptions, and categories
+   - Share your games with other students
 
 ## Troubleshooting
 
