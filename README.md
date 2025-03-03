@@ -12,11 +12,9 @@ A mobile application for hosting and joining campus parties.
 - **QR Code Sharing**: Share party details via QR codes
 - **Notifications**: Receive notifications about party updates
 - **Payment Integration**: Require Venmo payments for party entry
-- **Safety Features**: Designated Driver finder and drink counter
+- **Safety Features**: Find a ride and count drinks
 - **Collaborative Playlists**: Create and contribute to party playlists
-- **Expense Splitting**: Track and split party expenses with attendees
 - **Anonymous Feedback**: Rate and review parties anonymously
-- **Campus Games**: Play university-specific party games
 
 ## Tech Stack
 
